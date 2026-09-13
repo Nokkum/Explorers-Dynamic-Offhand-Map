@@ -1,20 +1,21 @@
 package com.explorermap.mod.network;
 
 import com.explorermap.mod.ExplorerMapMod;
+import com.explorermap.mod.config.ExplorerMapConfig;
 import com.explorermap.mod.expansion.ExpansionRecord;
 import com.explorermap.mod.registry.ExplorerMapRegistry;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.FilledMapItem;
+import net.minecraft.item.Item;
+import net.minecraft.item.Items;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.FilledMapItem;
-import net.minecraft.item.Items;
 import net.minecraft.util.Hand;
-import net.minecraft.item.Item;
 
 /**
  * C2S packet: client requests a directional map expansion.
@@ -23,10 +24,10 @@ import net.minecraft.item.Item;
  *   1. Client: player clicks expand button in FullMapScreen.
  *   2. Client: sends RequestExpansionPayload(direction, highDetail) to server.
  *   3. Server: validates resources, creates/finds adjacent MapState,
- *              replies with GrantExpansionPayload(direction, realMapId).
- *   4. Client: receives GrantExpansionPayload, records ExpansionRecord on attachment.
- *
- * This packet handles step 2. See GrantExpansionPayload for step 3→4.
+ *              replies with GrantExpansionPayload(direction, realMapId)
+ *              OR ExpansionFailedPayload(direction, reason) on failure.
+ *   4. Client: receives GrantExpansionPayload, records ExpansionRecord on attachment,
+ *              or receives ExpansionFailedPayload and shows a toast via ExpansionFeedback.
  */
 public record RequestExpansionPayload(
         ExpansionRecord.Direction direction,
@@ -49,11 +50,10 @@ public record RequestExpansionPayload(
     @Override
     public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
 
-    // ── Registration (call from ExplorerMapMod.onInitialize) ──────────────
+    // ── Registration ──────────────────────────────────────────────────────
 
     public static void register() {
         PayloadTypeRegistry.playC2S().register(ID, CODEC);
-
         ServerPlayNetworking.registerGlobalReceiver(ID, (payload, context) -> {
             ServerPlayerEntity player = context.player();
             context.server().execute(() -> handleOnServer(player, payload));
@@ -64,21 +64,37 @@ public record RequestExpansionPayload(
 
     private static void handleOnServer(ServerPlayerEntity player,
                                         RequestExpansionPayload payload) {
-        // 1. Validate player has the map in their off-hand
         var offHand = player.getStackInHand(Hand.OFF_HAND);
-        if (!ExplorerMapMod.isFilledMap(offHand)) return;
+        if (!ExplorerMapMod.isFilledMap(offHand)) {
+            ExpansionFailedPayload.sendTo(player, payload.direction(),
+                    ExpansionFailedPayload.Reason.NO_MAP_IN_OFFHAND);
+            return;
+        }
 
-        // 2. Resolve current MapState on the server
         var world    = player.getServerWorld();
         var mapState = FilledMapItem.getMapState(offHand, world);
-        if (mapState == null) return;
+        if (mapState == null) {
+            ExpansionFailedPayload.sendTo(player, payload.direction(),
+                    ExpansionFailedPayload.Reason.NO_MAP_IN_OFFHAND);
+            return;
+        }
 
-        // 3. Guard: already expanded this direction?
-        if (ExplorerMapMod.getOrCreate(mapState).hasExpansion(payload.direction())) return;
+        if (ExplorerMapMod.getOrCreate(mapState).hasExpansion(payload.direction())) {
+            ExpansionFailedPayload.sendTo(player, payload.direction(),
+                    ExpansionFailedPayload.Reason.ALREADY_EXPANDED);
+            return;
+        }
 
-        // 4. Compute adjacent tile center
-        int scale      = 1 << mapState.scale;
-        int tileWidth  = 128 * scale;
+        // Check resources BEFORE creating the map, so we can report the specific
+        // failure reason without having created an orphaned MapState.
+        ExpansionFailedPayload.Reason resourceFailure = checkResources(player, payload.highDetail());
+        if (resourceFailure != null) {
+            ExpansionFailedPayload.sendTo(player, payload.direction(), resourceFailure);
+            return;
+        }
+
+        int scale     = 1 << mapState.scale;
+        int tileWidth = 128 * scale;
         int adjX = mapState.centerX, adjZ = mapState.centerZ;
         switch (payload.direction()) {
             case NORTH -> adjZ -= tileWidth;
@@ -87,35 +103,62 @@ public record RequestExpansionPayload(
             case EAST  -> adjX += tileWidth;
         }
 
-        // 4. Find or create a vanilla MapState at that position (real search via MapStateLocator)
-        int newMapId = MapStateLocator.findOrCreate(
-                player.getServerWorld(), adjX, adjZ, (byte) mapState.scale);
+        int newMapId = MapStateLocator.findOrCreate(world, adjX, adjZ, (byte) mapState.scale);
 
-        // 5. Consume resources (authoritative — after we know creation will succeed)
-        if (!consumeServerSide(player, payload.highDetail())) return;
+        // Resources already validated; consume now that creation succeeded.
+        consumeResources(player, payload.highDetail());
 
-        // 6. Reply to client with real map ID and highDetail flag
         ServerPlayNetworking.send(player,
                 new GrantExpansionPayload(payload.direction(), newMapId, payload.highDetail()));
     }
 
-    private static boolean consumeServerSide(ServerPlayerEntity player, boolean highDetail) {
-        var inv = player.getInventory();
-        if (!inv.contains(Items.PAPER.getDefaultStack())) return false;
-        if (highDetail) {
-            if (!inv.contains(Items.INK_SAC.getDefaultStack())) return false;
-            if (!inv.contains(Items.COMPASS.getDefaultStack())) return false;
+    /**
+     * Checks (without consuming) whether the player has enough resources.
+     * Returns null if resources are sufficient, or the specific failure reason.
+     */
+    private static ExpansionFailedPayload.Reason checkResources(ServerPlayerEntity player,
+                                                                  boolean highDetail) {
+        var inv  = player.getInventory();
+        int cost = ExplorerMapConfig.get().expansionPaperCost;
+
+        int paperHeld = 0;
+        for (int i = 0; i < inv.size(); i++) {
+            var slot = inv.getStack(i);
+            if (slot.isOf(Items.PAPER)) paperHeld += slot.getCount();
         }
-        removeOne(inv, Items.PAPER);
+        if (paperHeld < cost) return ExpansionFailedPayload.Reason.MISSING_PAPER;
+
+        if (highDetail) {
+            if (!inv.contains(Items.INK_SAC.getDefaultStack())
+             || !inv.contains(Items.COMPASS.getDefaultStack())) {
+                return ExpansionFailedPayload.Reason.MISSING_INK_OR_COMPASS;
+            }
+        }
+        return null;
+    }
+
+    /** Consumes the configured resources. Assumes checkResources() already passed. */
+    private static void consumeResources(ServerPlayerEntity player, boolean highDetail) {
+        var inv  = player.getInventory();
+        int cost = ExplorerMapConfig.get().expansionPaperCost;
+
+        int remaining = cost;
+        for (int i = 0; i < inv.size() && remaining > 0; i++) {
+            var slot = inv.getStack(i);
+            if (slot.isOf(Items.PAPER)) {
+                int take = Math.min(remaining, slot.getCount());
+                slot.decrement(take);
+                remaining -= take;
+            }
+        }
+
         if (highDetail) {
             removeOne(inv, Items.INK_SAC);
             removeOne(inv, Items.COMPASS);
         }
-        return true;
     }
 
-    private static void removeOne(PlayerInventory inv,
-                                   Item item) {
+    private static void removeOne(PlayerInventory inv, Item item) {
         for (int i = 0; i < inv.size(); i++) {
             var slot = inv.getStack(i);
             if (slot.isOf(item)) { slot.decrement(1); return; }

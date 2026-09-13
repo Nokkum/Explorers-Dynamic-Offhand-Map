@@ -79,8 +79,13 @@ public class ExplorationEngine {
         // Map centers are always stored in Overworld space, so we scale up.
         double coordMult = DimensionMapTracker.dimensionCoordMultiplier(player);
 
-        // ── 4. Cast rays ──────────────────────────────────────────────────
-        castRays(player, mapState, attachment, yawDeg, pitchDeg, fovDeg, cfg.rayCount, coordMult);
+        // ── 4. Cast rays / mark all ───────────────────────────────────────
+        if (cfg.fogOfDiscovery) {
+            castRays(player, mapState, attachment, yawDeg, pitchDeg, fovDeg, cfg.rayCount, coordMult);
+        } else {
+            // Fog disabled: reveal every pixel within the map bounds instantly.
+            markAllPixels(attachment);
+        }
 
         // ── 5. Multiplayer sync (throttled) ───────────────────────────────
         // Upload this client's bitmask to the server every ~3 seconds if new
@@ -89,6 +94,15 @@ public class ExplorationEngine {
         if (SyncDiscoveryPayload.shouldUpload(attachment.getDiscoveryGeneration())) {
             ClientPlayNetworking.send(
                     new SyncDiscoveryPayload.Upload(mapId, attachment.getDiscoveryLongs()));
+        }
+    }
+
+    /** Reveals every pixel in the 128×128 grid instantly (fog disabled mode). */
+    private static void markAllPixels(MapDiscoveryAttachment attachment) {
+        for (int row = 0; row < 128; row++) {
+            for (int col = 0; col < 128; col++) {
+                attachment.discover(col, row);
+            }
         }
     }
 

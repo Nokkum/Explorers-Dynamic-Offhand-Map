@@ -4,12 +4,13 @@ import com.explorermap.mod.ExplorerMapMod;
 import com.explorermap.mod.attachment.MapDiscoveryAttachment;
 import com.explorermap.mod.expansion.ExpansionHandler;
 import com.explorermap.mod.expansion.ExpansionRecord;
+import com.explorermap.mod.expansion.MultiTileCanvas;
 import com.explorermap.mod.expansion.TileGrid;
 import com.explorermap.mod.hud.TileRenderer;
 import com.explorermap.mod.hud.WaypointIconRenderer;
+import com.explorermap.mod.network.DeleteWaypointPayload;
 import com.explorermap.mod.network.RequestExpansionPayload;
 import com.explorermap.mod.waypoint.Waypoint;
-import com.explorermap.mod.expansion.MultiTileCanvas;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -49,6 +50,10 @@ public class FullMapScreen extends Screen {
     private double dragStartX, dragStartY;
     private float panStartX, panStartY;
     boolean hdMode = false;
+
+    // Waypoint right-click context menu state
+    private Waypoint contextMenuWaypoint;
+    private int contextMenuX, contextMenuY;
 
     public FullMapScreen() {
         super(Text.translatable("screen.explorermap.full_map"));
@@ -174,6 +179,17 @@ public class FullMapScreen extends Screen {
                     hdLabel, cx + size / 2 - labelW / 2, cy - 10, 0xFFFFCC44);
         }
 
+        // Expansion failure toast (red flash near the direction that failed)
+        var failedDir = ExpansionFeedback.getActiveFailureDirection();
+        if (failedDir != null) {
+            String msg = ExpansionFeedback.getActiveFailureMessage();
+            if (msg != null) {
+                int msgW = this.textRenderer.getWidth(msg);
+                context.drawTextWithShadow(this.textRenderer, msg,
+                        cx + size / 2 - msgW / 2, cy - 22, 0xFFFF5555);
+            }
+        }
+
         super.render(context, mouseX, mouseY, delta);
     }
 
@@ -234,8 +250,97 @@ public class FullMapScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
-        if (button == 0) { dragging = true; dragStartX = mx; dragStartY = my; panStartX = panX; panStartY = panY; }
+        if (button == 1) { // right-click: check for waypoint hit
+            Waypoint hit = findWaypointNear(mx, my);
+            if (hit != null) {
+                contextMenuWaypoint = hit;
+                contextMenuX = (int) mx;
+                contextMenuY = (int) my;
+                rebuildContextMenuButtons();
+                return true;
+            } else {
+                closeContextMenu();
+            }
+        }
+        if (button == 0) {
+            // Left-click dismisses any open context menu, then starts a drag
+            closeContextMenu();
+            dragging = true; dragStartX = mx; dragStartY = my; panStartX = panX; panStartY = panY;
+        }
         return super.mouseClicked(mx, my, button);
+    }
+
+    /** Finds a waypoint within a small screen-pixel radius of the click, or null. */
+    private Waypoint findWaypointNear(double mx, double my) {
+        if (attachment == null || mapState == null || client == null || client.world == null) return null;
+
+        TileGrid grid = TileGrid.build(mapState, attachment, client.world);
+        MultiTileCanvas canvas = MultiTileCanvas.from(grid, mapState);
+        int cx = canvasX(), cy = canvasY(), size = canvasSize();
+        int originX = canvas.defaultScreenOriginX(cx + size / 2, zoom, panX);
+        int originY = canvas.defaultScreenOriginY(cy + size / 2, zoom, panY);
+
+        final int HIT_RADIUS = 8;
+        for (Waypoint wp : attachment.getWaypoints()) {
+            int cpx = canvas.worldToCanvasX(wp.worldX());
+            int cpz = canvas.worldToCanvasZ(wp.worldZ());
+            int sx  = originX + Math.round(cpx * zoom);
+            int sy  = originY + Math.round(cpz * zoom);
+            double dist = Math.hypot(mx - sx, my - sy);
+            if (dist <= HIT_RADIUS) return wp;
+        }
+        return null;
+    }
+
+    private void rebuildContextMenuButtons() {
+        // Remove any previous context menu buttons before adding new ones
+        // (identified by a marker interface would be cleaner, but a simple
+        // rebuild via clearAndInit is acceptable here since it's infrequent)
+        this.clearChildren();
+        this.init();
+
+        if (contextMenuWaypoint == null) return;
+
+        addDrawableChild(ButtonWidget.builder(
+                Text.translatable("label.explorermap.edit_waypoint"),
+                b -> {
+                    Waypoint toEdit = contextMenuWaypoint;
+                    closeContextMenu();
+                    if (client != null) client.setScreen(new WaypointEditScreen(this, toEdit));
+                }
+        ).dimensions(contextMenuX, contextMenuY, 90, 18).build());
+
+        addDrawableChild(ButtonWidget.builder(
+                Text.translatable("label.explorermap.delete_waypoint"),
+                b -> {
+                    deleteWaypoint(contextMenuWaypoint);
+                    closeContextMenu();
+                }
+        ).dimensions(contextMenuX, contextMenuY + 20, 90, 18).build());
+    }
+
+    private void deleteWaypoint(Waypoint wp) {
+        if (client == null || client.player == null || attachment == null) return;
+
+        // Optimistic local removal
+        attachment.removeWaypoint(wp.name());
+
+        // Persist on server
+        ItemStack offHand = client.player.getStackInHand(Hand.OFF_HAND);
+        if (ExplorerMapMod.isFilledMap(offHand)) {
+            Integer mapId = FilledMapItem.getMapId(offHand);
+            if (mapId != null) {
+                ClientPlayNetworking.send(new DeleteWaypointPayload(mapId, wp.name()));
+            }
+        }
+    }
+
+    private void closeContextMenu() {
+        if (contextMenuWaypoint != null) {
+            contextMenuWaypoint = null;
+            this.clearChildren();
+            this.init();
+        }
     }
 
     @Override

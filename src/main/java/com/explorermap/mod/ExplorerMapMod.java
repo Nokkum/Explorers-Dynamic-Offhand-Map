@@ -2,6 +2,7 @@ package com.explorermap.mod;
 
 import com.explorermap.mod.attachment.MapDiscoveryAttachment;
 import com.explorermap.mod.network.DeleteWaypointPayload;
+import com.explorermap.mod.network.ExpansionFailedPayload;
 import com.explorermap.mod.network.GrantExpansionPayload;
 import com.explorermap.mod.network.RequestExpansionPayload;
 import com.explorermap.mod.network.SaveWaypointPayload;
@@ -46,6 +47,7 @@ public class ExplorerMapMod implements ModInitializer {
         PayloadTypeRegistry.playS2C().register(GrantExpansionPayload.ID,  GrantExpansionPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(SyncWaypointsPayload.ID,   SyncWaypointsPayload.CODEC);
         SyncDiscoveryPayload.Broadcast.registerCommon();
+        ExpansionFailedPayload.registerCommon();
 
         // ── C2S payload types + server handlers ───────────────────────────
         RequestExpansionPayload.register();

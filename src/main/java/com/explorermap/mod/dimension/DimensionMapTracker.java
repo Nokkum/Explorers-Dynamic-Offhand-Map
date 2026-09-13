@@ -6,6 +6,7 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.world.World;
 import net.minecraft.world.storage.MapState;
+import net.minecraft.text.Text;
 
 /**
  * Resolves dimension compatibility between the player's current world and
@@ -120,14 +121,33 @@ public final class DimensionMapTracker {
     }
 
     /**
+     * Returns true if the player is currently in the Overworld.
+     * Used by the HUD to decide whether to show a dimension label at all —
+     * comparing against the registry key directly (not the localized string)
+     * keeps this correct under any language setting.
+     */
+    public static boolean isOverworld(ClientPlayerEntity player) {
+        return player.getWorld().getRegistryKey().equals(World.OVERWORLD);
+    }
+
+    /**
      * Human-readable dimension label for the HUD compass/status line.
+     * Uses translation keys for vanilla dimensions so the label localizes
+     * correctly; modded dimensions fall back to a formatted registry path
+     * since we can't know their translation keys in advance.
      */
     public static String dimensionLabel(ClientPlayerEntity player) {
         RegistryKey<World> dim = player.getWorld().getRegistryKey();
-        if (dim.equals(World.OVERWORLD)) return "Overworld";
-        if (dim.equals(World.NETHER))    return "Nether";
-        if (dim.equals(World.END))       return "The End";
-        // Modded dimension: use last segment of registry path
+        if (dim.equals(World.OVERWORLD)) {
+            return Text.translatable("explorermap.dimension.overworld").getString();
+        }
+        if (dim.equals(World.NETHER)) {
+            return Text.translatable("explorermap.dimension.nether").getString();
+        }
+        if (dim.equals(World.END)) {
+            return Text.translatable("explorermap.dimension.end").getString();
+        }
+        // Modded dimension: no translation key available, format the registry path directly
         String path = dim.getValue().getPath();
         return Character.toUpperCase(path.charAt(0)) + path.substring(1).replace('_', ' ');
     }

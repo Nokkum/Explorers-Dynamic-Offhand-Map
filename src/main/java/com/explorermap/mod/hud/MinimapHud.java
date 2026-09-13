@@ -106,9 +106,10 @@ public class MinimapHud {
 
     private static void renderDimensionLabel(DrawContext ctx, ClientPlayerEntity player,
                                               int boxX, int boxY, int size) {
+        // Compare the registry key directly (locale-safe) rather than the
+        // localized label string, which would break under non-English locales.
+        if (DimensionMapTracker.isOverworld(player)) return;
         String label = DimensionMapTracker.dimensionLabel(player);
-        // Only show non-Overworld labels to avoid visual clutter
-        if (label.equals("Overworld")) return;
         var tr = MinecraftClient.getInstance().textRenderer;
         int lw = tr.getWidth(label);
         ctx.drawText(tr, label, boxX + size / 2 - lw / 2, boxY + size + 2, 0xFFAAAAAA, true);

@@ -29,6 +29,19 @@ import com.explorermap.mod.ExplorerMapMod;
  */
 public final class TileGrid {
 
+    /**
+     * Client-side cache: MapState instance → vanilla integer map ID.
+     * MapState objects are singletons per ID on the client, so identity is safe.
+     * WeakHashMap lets entries be GC'd once a MapState is no longer referenced.
+     */
+    private static final java.util.WeakHashMap<MapState, Integer> MAP_ID_CACHE =
+            new java.util.WeakHashMap<>();
+
+    /** Call on disconnect to prevent stale cache entries carrying into a new world/session. */
+    public static void clearMapIdCache() {
+        MAP_ID_CACHE.clear();
+    }
+
     public record TileEntry(
             int mapId,           // vanilla integer map ID (for texture cache key)
             MapState state,
@@ -120,24 +133,24 @@ public final class TileGrid {
         return grid;
     }
 
-    /** Scans the world's map registry to find the integer ID for a given MapState. */
+    /** Returns the integer map ID for the given MapState, using the cache when possible. */
     private static int resolveMapId(MapState state, ClientWorld world) {
-        // Walk map IDs from 0 up to the world's current max map ID.
-        // The client mirrors the server's MapIdCount via the map data packets,
-        // accessible through the world's map storage. We scan by identity (==)
-        // since each MapState is a singleton per ID on the client.
-        // Stop early if we hit 100 consecutive nulls — IDs are assigned sequentially
-        // so a run of nulls past the current max means we're done.
+        Integer cached = MAP_ID_CACHE.get(state);
+        if (cached != null) return cached;
+
+        // Cache miss: scan the world's map registry once, caching every ID found
+        // along the way so subsequent lookups for other tiles are also fast.
         int nullRun = 0;
         for (int id = 0; id < 32768; id++) {
             var candidate = world.getMapState(FilledMapItem.getMapName(id));
             if (candidate == null) {
-                if (++nullRun > 20) break; // 20 consecutive nulls = past all registered maps
+                if (++nullRun > 20) break;
                 continue;
             }
             nullRun = 0;
+            MAP_ID_CACHE.put(candidate, id);
             if (candidate == state) return id;
         }
-        return -1; // not found — use -1 as cache key (renders fine, just no sharing)
+        return -1;
     }
 }
