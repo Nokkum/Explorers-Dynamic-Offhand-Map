@@ -82,8 +82,10 @@ public class ExplorationEngine {
         // ── 4. Cast rays / mark all ───────────────────────────────────────
         if (cfg.fogOfDiscovery) {
             castRays(player, mapState, attachment, yawDeg, pitchDeg, fovDeg, cfg.rayCount, coordMult);
-        } else {
+        } else if (attachment.discoveryFraction() < 1f) {
             // Fog disabled: reveal every pixel within the map bounds instantly.
+            // Skip once fully discovered so we don't re-scan 16 384 pixels
+            // (and take a lock per pixel) forever on every throttle tick.
             markAllPixels(attachment);
         }
 

@@ -132,7 +132,6 @@ public class MinimapHud {
         boolean hasE = hasDir(exps, ExpansionRecord.Direction.EAST);
 
         int available = 0xCCFFFF88;  // yellow — can expand here
-        int locked    = 0x44888888;  // dim gray — already expanded / border
 
         if (!hasN) ctx.drawText(tr, "▲", cx - 3, by - 10,  available, true);
         if (!hasS) ctx.drawText(tr, "▼", cx - 3, by + size + 2, available, true);

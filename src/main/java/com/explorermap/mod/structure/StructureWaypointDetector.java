@@ -94,6 +94,8 @@ public final class StructureWaypointDetector {
 
         if (discoveredChunks.isEmpty()) return;
 
+        boolean placedAny = false;
+
         // For each discovered chunk, check for structure starts
         for (ChunkPos chunkPos : discoveredChunks) {
             // Only check chunks that are loaded (don't force-load)
@@ -122,17 +124,19 @@ public final class StructureWaypointDetector {
 
                 Waypoint wp = new Waypoint(name, structX, structZ, iconId, color);
                 attachment.addWaypoint(wp);
+                placedAny = true;
 
                 ExplorerMapMod.LOGGER.info(
                         "[ExplorerMap] Auto-waypoint: {} at ({}, {}) on map #{}",
                         name, (int)structX, (int)structZ, mapId);
-
-                // Persist on server and sync back to all map holders
-                // (Re-use the SaveWaypoint server path without a C2S packet —
-                //  we call the attachment directly since we're already server-side,
-                //  then trigger a waypoint sync broadcast.)
-                broadcastWaypointSync(server, player, mapId);
             }
+        }
+
+        // Broadcast once per call, not once per structure — avoids sending
+        // redundant full waypoint-list syncs when several structures are
+        // revealed in the same discovery batch.
+        if (placedAny) {
+            broadcastWaypointSync(server, player, mapId);
         }
     }
 
@@ -188,11 +192,12 @@ public final class StructureWaypointDetector {
         String[] parts = type.split("_");
         StringBuilder sb = new StringBuilder();
         for (String part : parts) {
+            if (part.isEmpty()) continue; // guard against "__" or leading/trailing "_"
             if (!sb.isEmpty()) sb.append(' ');
             sb.append(Character.toUpperCase(part.charAt(0)));
             sb.append(part.substring(1));
         }
-        return sb.toString();
+        return sb.isEmpty() ? "Structure" : sb.toString();
     }
 
     private static int colorForStructure(ServerWorld world, Structure structure) {

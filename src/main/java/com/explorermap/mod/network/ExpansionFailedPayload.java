@@ -1,6 +1,7 @@
 package com.explorermap.mod.network;
 
 import com.explorermap.mod.expansion.ExpansionRecord;
+import com.explorermap.mod.gui.ExpansionFeedback;
 import com.explorermap.mod.registry.ExplorerMapRegistry;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -70,6 +71,6 @@ public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason
     @Environment(EnvType.CLIENT)
     private static void handleOnClient(ExpansionFailedPayload payload) {
         // Store the failure so FullMapScreen can render a toast/flash on its next frame.
-        com.explorermap.mod.gui.ExpansionFeedback.reportFailure(payload.direction(), payload.reason());
+        ExpansionFeedback.reportFailure(payload.direction(), payload.reason());
     }
 }

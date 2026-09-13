@@ -57,8 +57,7 @@ public final class TileGrid {
         this.tileBlockSize = tileBlockSize;
     }
 
-    public List<TileEntry> tiles()         { return tiles; }
-    public int             tileBlockSize() { return tileBlockSize; }
+    public List<TileEntry> tiles() { return tiles; }
 
     /** Returns true if a tile at the given grid position exists in this grid. */
     public boolean hasTileAt(int gridX, int gridZ) {
@@ -66,18 +65,6 @@ public final class TileGrid {
             if (t.gridX() == gridX && t.gridZ() == gridZ) return true;
         }
         return false;
-    }
-
-    /**
-     * Computes the screen pixel offset of a tile relative to the root tile's
-     * top-left corner at the given rendered tile size (pixels).
-     */
-    public static int screenOffsetX(TileEntry tile, int renderedTileSize) {
-        return tile.gridX() * renderedTileSize;
-    }
-
-    public static int screenOffsetZ(TileEntry tile, int renderedTileSize) {
-        return tile.gridZ() * renderedTileSize;
     }
 
     // ── Factory ───────────────────────────────────────────────────────────

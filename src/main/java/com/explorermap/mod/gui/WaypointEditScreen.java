@@ -247,7 +247,19 @@ public class WaypointEditScreen extends Screen {
         String iconId = iconIds.isEmpty() ? Waypoint.DEFAULT_ICON : iconIds.get(selectedIconIndex);
         int color = COLORS[selectedColorIndex];
 
-        Waypoint wp = new Waypoint(name, client.player.getX(), client.player.getZ(), iconId, color);
+        // Preserve the original position when editing an existing waypoint.
+        // Only new waypoints (created via "+ Waypoint") are placed at the
+        // player's current location — editing must not silently relocate them.
+        double wx, wz;
+        if (editingWaypoint != null) {
+            wx = editingWaypoint.worldX();
+            wz = editingWaypoint.worldZ();
+        } else {
+            wx = client.player.getX();
+            wz = client.player.getZ();
+        }
+
+        Waypoint wp = new Waypoint(name, wx, wz, iconId, color);
 
         var offHand = client.player.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand) || client.world == null) {

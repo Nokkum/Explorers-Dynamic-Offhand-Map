@@ -7,6 +7,7 @@ import net.fabricmc.api.Environment;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.util.Identifier;
 import net.minecraft.client.MinecraftClient;
+import com.mojang.blaze3d.systems.RenderSystem;
 
 /**
  * Draws waypoint icons on the mini-map HUD and full-map screen.
@@ -71,6 +72,14 @@ public final class WaypointIconRenderer {
         // Outline/shadow dot behind the icon
         ctx.fill(x - 1, y - 1, x + size + 1, y + size + 1, 0x88000000);
 
+        // Apply the tint as a true colour multiply via the shader colour state.
+        // This respects the icon's per-pixel alpha (transparent stays transparent)
+        // rather than painting a flat overlay square over the whole bounding box.
+        float r = ((tintARGB >> 16) & 0xFF) / 255f;
+        float g = ((tintARGB >>  8) & 0xFF) / 255f;
+        float b = ( tintARGB        & 0xFF) / 255f;
+        RenderSystem.setShaderColor(r, g, b, 1f);
+
         // Draw texture scaled to (size×size).
         // DrawContext.drawTexture(Identifier, int x, int y, int u, int v,
         //                         int width, int height, int texW, int texH)
@@ -87,12 +96,8 @@ public final class WaypointIconRenderer {
         }
         matrices.pop();
 
-        // Apply tint as a colour-multiply overlay (semi-transparent if white)
-        if (tintARGB != Waypoint.DEFAULT_COLOR) {
-            // Blend tint at ~50% over the icon for a recolour effect
-            int tintOverlay = (tintARGB & 0x00FFFFFF) | 0x80000000;
-            ctx.fill(x, y, x + size, y + size, tintOverlay);
-        }
+        // Reset shader colour so we don't leak the tint into unrelated draw calls.
+        RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
     }
 
     // ── Map-overlay helpers ───────────────────────────────────────────────

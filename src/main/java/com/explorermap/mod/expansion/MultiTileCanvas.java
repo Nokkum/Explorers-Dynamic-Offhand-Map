@@ -17,11 +17,11 @@ import net.minecraft.world.storage.MapState;
  * only need simple scale + offset math, not per-tile conditionals.
  *
  * Usage:
- *   MultiTileCanvas canvas = MultiTileCanvas.from(grid);
- *   // screen pos of a canvas pixel:
- *   int sx = canvas.toScreenX(canvasPx, screenOriginX, zoom, panX);
+ *   MultiTileCanvas canvas = MultiTileCanvas.from(grid, rootState);
+ *   int originX = canvas.defaultScreenOriginX(screenCentreX, zoom, panX);
+ *   int screenX = originX + Math.round(canvasPixelX * zoom);
  *   // canvas pixel of a world coord:
- *   int cpx = canvas.worldToCanvasX(worldX, rootState);
+ *   int cpx = canvas.worldToCanvasX(worldX);
  */
 public final class MultiTileCanvas {
 
@@ -90,31 +90,6 @@ public final class MultiTileCanvas {
     /** Converts a world Z coordinate to a canvas pixel row. */
     public int worldToCanvasZ(double worldZ) {
         return (int)((worldZ - worldOriginZ) / scale);
-    }
-
-    // ── Canvas → Screen ───────────────────────────────────────────────────
-
-    /**
-     * Converts a canvas pixel X to a screen X.
-     *
-     * @param canvasPx     Canvas pixel column.
-     * @param screenOriginX Screen X of canvas pixel (0,0).
-     * @param zoom         Zoom factor.
-     */
-    public int toScreenX(int canvasPx, int screenOriginX, float zoom) {
-        return screenOriginX + Math.round(canvasPx * zoom);
-    }
-
-    /** Converts a canvas pixel Z to a screen Y. */
-    public int toScreenY(int canvasPz, int screenOriginY, float zoom) {
-        return screenOriginY + Math.round(canvasPz * zoom);
-    }
-
-    // ── Canvas pixel size on screen ───────────────────────────────────────
-
-    /** Screen pixels per canvas pixel at the given zoom. Always at least 1. */
-    public int screenPixelSize(float zoom) {
-        return Math.max(1, Math.round(zoom));
     }
 
     // ── Screen origin helpers ─────────────────────────────────────────────

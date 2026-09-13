@@ -159,8 +159,6 @@ public final class TileRenderer {
         Identifier tex = TileTextureCache.getInstance()
                 .getOrUpdate(tile.mapId(), tile.state(), tile.attachment());
 
-        int screenSize = Math.max(1, Math.round(128 * pixSize));
-
         var matrices = context.getMatrices();
         matrices.push();
         matrices.translate((float) tileScreenX, (float) tileScreenY, 0f);

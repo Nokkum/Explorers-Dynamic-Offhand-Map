@@ -119,12 +119,31 @@ public final class TileTextureCache {
 
     private void rebuild(Entry entry, MapState mapState,
                           MapDiscoveryAttachment attachment) {
-        byte[] colors   = mapState.colors;
-        byte[] bitmask  = attachment.getDiscoveredPixelsCopy();
+        byte[] colors  = mapState.colors;
+        byte[] bitmask = attachment.getDiscoveredPixelsCopy();
 
-        // Allocate or reuse the NativeImage
-        if (entry.image == null) {
-            entry.image = new NativeImage(NativeImage.Format.RGBA, 128, 128, false);
+        var tm = MinecraftClient.getInstance().getTextureManager();
+
+        // Determine which NativeImage to paint into: on first build, allocate
+        // a fresh one; on subsequent rebuilds, paint directly into the texture's
+        // own backing image (obtained via getImage()) so we don't maintain a
+        // separate scratch buffer and then redundantly copy it pixel-by-pixel.
+        NativeImage target;
+        boolean firstBuild = (entry.texture == null);
+
+        if (firstBuild) {
+            target = new NativeImage(NativeImage.Format.RGBA, 128, 128, false);
+        } else {
+            NativeImage texImage = entry.texture.getImage();
+            if (texImage != null) {
+                target = texImage;
+            } else {
+                // Texture's image was somehow released — recreate from scratch.
+                target = new NativeImage(NativeImage.Format.RGBA, 128, 128, false);
+                tm.destroyTexture(entry.identifier);
+                entry.texture.close();
+                entry.texture = null;
+            }
         }
 
         for (int row = 0; row < 128; row++) {
@@ -141,38 +160,20 @@ public final class TileTextureCache {
                     abgr = FOG_ABGR;
                 }
 
-                entry.image.setColor(col, row, abgr);
+                target.setColor(col, row, abgr);
             }
         }
 
-        // Upload to GPU
-        var tm = MinecraftClient.getInstance().getTextureManager();
         if (entry.texture == null) {
-            // First time: create the DynamicTexture from the NativeImage and register it.
-            // DynamicTexture takes ownership of the image on construction.
-            entry.texture    = new DynamicTexture(entry.image);
+            // First time (or recovering from a released image): create the
+            // DynamicTexture from the freshly painted image and register it.
+            entry.texture    = new DynamicTexture(target);
             entry.identifier = tm.registerDynamicTexture(
                     "explorermap/tile/" + entry.slot, entry.texture);
         } else {
-            // Subsequent updates: overwrite the image pixels in-place and re-upload.
-            // We write directly into the texture's own NativeImage via getImage(),
-            // then call upload(). This avoids setImage() which was removed in 1.21.
-            NativeImage texImage = entry.texture.getImage();
-            if (texImage != null) {
-                for (int row = 0; row < 128; row++) {
-                    for (int col = 0; col < 128; col++) {
-                        texImage.setColor(col, row, entry.image.getColor(col, row));
-                    }
-                }
-                entry.texture.upload();
-            } else {
-                // Fallback: destroy and re-create if getImage() returns null
-                tm.destroyTexture(entry.identifier);
-                entry.texture.close();
-                entry.texture    = new DynamicTexture(entry.image);
-                entry.identifier = tm.registerDynamicTexture(
-                        "explorermap/tile/" + entry.slot, entry.texture);
-            }
+            // We painted directly into the texture's own image above —
+            // just push it to the GPU, no redundant copy needed.
+            entry.texture.upload();
         }
     }
 
@@ -198,10 +199,9 @@ public final class TileTextureCache {
 
     private static final class Entry {
         final int slot;
-        long          generation = Long.MIN_VALUE;
-        NativeImage   image;
+        long           generation = Long.MIN_VALUE;
         DynamicTexture texture;
-        Identifier    identifier;
+        Identifier     identifier;
 
         Entry(int slot) {
             this.slot = slot;
