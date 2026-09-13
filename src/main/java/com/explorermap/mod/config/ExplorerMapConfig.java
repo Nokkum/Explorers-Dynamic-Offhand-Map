@@ -59,9 +59,6 @@ public class ExplorerMapConfig implements ConfigData {
 
     public float opacity() { return opacityPercent / 100f; }
 
-    // workaround: Cloth Config needs a direct float field for some accessors
-    public float opacity = 0.9f;
-
     // ── Visibility toggles ────────────────────────────────────────────────
 
     @ConfigEntry.Gui.Tooltip

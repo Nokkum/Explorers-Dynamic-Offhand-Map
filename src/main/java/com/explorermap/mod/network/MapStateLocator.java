@@ -30,7 +30,7 @@ public final class MapStateLocator {
      * at the given scale. Creates a new map if none is found.
      */
     public static int findOrCreate(ServerWorld world, int cx, int cz, byte scale) {
-        int maxId    = world.getNextMapId();
+        int maxId     = world.getNextMapId();
         int tolerance = Math.max(1, (1 << scale) / 2);
 
         for (int id = 0; id < maxId; id++) {
@@ -53,10 +53,9 @@ public final class MapStateLocator {
     }
 
     private static int createMap(ServerWorld world, int cx, int cz, byte scale) {
-        // FilledMapItem.createMap increments the world's mapId counter and stores
-        // the new MapState, then returns it. We capture the ID before calling so
-        // we can return it.
+        // Capture the ID that will be assigned before createMap increments the counter
         int assignedId = world.getNextMapId();
+        // scale parameter to createMap is the raw map scale byte (0-4), not blocks-per-pixel
         FilledMapItem.createMap(world, cx, cz, scale, true, false);
         return assignedId;
     }

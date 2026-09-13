@@ -5,6 +5,7 @@ import com.explorermap.mod.network.DeleteWaypointPayload;
 import com.explorermap.mod.network.GrantExpansionPayload;
 import com.explorermap.mod.network.RequestExpansionPayload;
 import com.explorermap.mod.network.SaveWaypointPayload;
+import com.explorermap.mod.network.SyncDiscoveryPayload;
 import com.explorermap.mod.network.SyncWaypointsPayload;
 import com.explorermap.mod.registry.ExplorerMapRegistry;
 import net.fabricmc.api.ModInitializer;
@@ -44,11 +45,13 @@ public class ExplorerMapMod implements ModInitializer {
         // ── S2C payload types (must be registered on common side) ─────────
         PayloadTypeRegistry.playS2C().register(GrantExpansionPayload.ID,  GrantExpansionPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(SyncWaypointsPayload.ID,   SyncWaypointsPayload.CODEC);
+        SyncDiscoveryPayload.Broadcast.registerCommon();
 
         // ── C2S payload types + server handlers ───────────────────────────
         RequestExpansionPayload.register();
         SaveWaypointPayload.register();
         DeleteWaypointPayload.register();
+        SyncDiscoveryPayload.Upload.register();
 
         // ── Server events (join sync, etc.) ───────────────────────────────
         ServerEventHandler.register();

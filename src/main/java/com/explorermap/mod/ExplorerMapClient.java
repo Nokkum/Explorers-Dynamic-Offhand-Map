@@ -4,15 +4,17 @@ import com.explorermap.mod.config.ExplorerMapConfig;
 import com.explorermap.mod.engine.ExplorationEngine;
 import com.explorermap.mod.gui.FullMapScreen;
 import com.explorermap.mod.hud.MinimapHud;
+import com.explorermap.mod.hud.TileTextureCache;
 import com.explorermap.mod.network.GrantExpansionPayload;
+import com.explorermap.mod.network.SyncDiscoveryPayload;
 import com.explorermap.mod.network.SyncWaypointsPayload;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
@@ -41,6 +43,9 @@ public class ExplorerMapClient implements ClientModInitializer {
         // Register S2C client handler for waypoint sync
         SyncWaypointsPayload.registerClient();
 
+        // Register S2C client handler for multiplayer discovery broadcast
+        SyncDiscoveryPayload.Broadcast.registerClient();
+
         // Register the mini-map HUD overlay
         HudRenderCallback.EVENT.register(MinimapHud::render);
 
@@ -62,6 +67,12 @@ public class ExplorerMapClient implements ClientModInitializer {
                     client.setScreen(new FullMapScreen());
                 }
             }
+        });
+
+        // Clear GPU texture cache on disconnect so stale textures don't survive into a new session
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            TileTextureCache.getInstance().clearAll();
+            SyncDiscoveryPayload.resetUploadState();
         });
 
         ExplorerMapMod.LOGGER.info("[ExplorerMap] Client init complete.");

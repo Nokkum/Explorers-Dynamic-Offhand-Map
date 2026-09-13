@@ -3,7 +3,7 @@
   "id": "explorermap",
   "version": "${version}",
   "name": "Explorer's Dynamic Off-Hand Map",
-  "description": "Adds a camera-based fog-of-discovery mini-map HUD when a filled map is held in the off-hand.",
+  "description": "Camera-based fog-of-discovery mini-map HUD. Hold a filled map in your off-hand to reveal the world as you look at it.",
   "authors": ["YourNameHere"],
   "license": "MIT",
   "icon": "assets/explorermap/icon.png",
@@ -11,8 +11,9 @@
   "environment": "*",
 
   "entrypoints": {
-    "main":   ["com.explorermap.mod.ExplorerMapMod"],
-    "client": ["com.explorermap.mod.ExplorerMapClient"]
+    "main":    ["com.explorermap.mod.ExplorerMapMod"],
+    "client":  ["com.explorermap.mod.ExplorerMapClient"],
+    "modmenu": ["com.explorermap.mod.ExplorerMapModMenuIntegration"]
   },
 
   "mixins": ["explorermap.mixins.json"],

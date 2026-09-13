@@ -1,6 +1,5 @@
 package com.explorermap.mod.mixin;
 
-import com.explorermap.mod.engine.ExplorationEngine;
 import net.minecraft.client.network.ClientPlayerEntity;
 import org.spongepowered.asm.mixin.Mixin;
 

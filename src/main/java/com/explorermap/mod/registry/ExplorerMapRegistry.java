@@ -24,11 +24,11 @@ public class ExplorerMapRegistry {
 
     static {
         // Built-in icons
-        register("explorermap:pin",      id("textures/waypoints/pin.png"));
-        register("explorermap:village",  id("textures/waypoints/village.png"));
-        register("explorermap:temple",   id("textures/waypoints/temple.png"));
-        register("explorermap:dungeon",  id("textures/waypoints/dungeon.png"));
-        register("explorermap:base",     id("textures/waypoints/base.png"));
+        register("explorermap:pin",      id("textures/waypoints/pin"));
+        register("explorermap:village",  id("textures/waypoints/village"));
+        register("explorermap:temple",   id("textures/waypoints/temple"));
+        register("explorermap:dungeon",  id("textures/waypoints/dungeon"));
+        register("explorermap:base",     id("textures/waypoints/base"));
     }
 
     public static void register(String iconId, Identifier texture) {

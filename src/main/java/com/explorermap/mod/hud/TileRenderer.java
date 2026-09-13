@@ -4,8 +4,8 @@ import com.explorermap.mod.expansion.MultiTileCanvas;
 import com.explorermap.mod.expansion.TileGrid;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.block.MapColor;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.util.Identifier;
 import net.minecraft.world.storage.MapState;
 
 /**
@@ -27,10 +27,7 @@ import net.minecraft.world.storage.MapState;
 @Environment(EnvType.CLIENT)
 public final class TileRenderer {
 
-    private static final int FOG_COLOR        = 0xFF0C0C0C;
-    private static final int FADE_COLOR_INNER = 0x88000000; // semi-transparent black
-    private static final int FADE_COLOR_OUTER = 0xCC000000; // denser at edge
-    private static final int FADE_WIDTH_PX    = 6;          // canvas pixels wide
+    private static final int FADE_WIDTH_PX = 6; // canvas pixels wide
 
     private TileRenderer() {}
 
@@ -143,29 +140,37 @@ public final class TileRenderer {
 
     // ── Per-tile pixel rendering ──────────────────────────────────────────
 
+    /**
+     * Renders one tile using a cached GPU texture.
+     *
+     * TileTextureCache maintains one NativeImage + DynamicTexture per map ID.
+     * It rebuilds the texture only when new pixels are discovered (generation
+     * counter changes), so this is typically a no-op CPU-side and a single
+     * textured quad GPU-side — replacing the previous 16 384 fill() calls.
+     *
+     * The texture is drawn scaled to cover (128*pixSize) × (128*pixSize)
+     * screen pixels via a matrix push/scale/pop, exactly as WaypointIconRenderer
+     * does for waypoint icons.
+     */
     private static void renderTilePixels(DrawContext context,
                                           TileGrid.TileEntry tile,
                                           int tileScreenX, int tileScreenY,
                                           float pixSize) {
-        byte[] colors = tile.state().colors;
-        var attach    = tile.attachment();
+        Identifier tex = TileTextureCache.getInstance()
+                .getOrUpdate(tile.mapId(), tile.state(), tile.attachment());
 
-        for (int row = 0; row < 128; row++) {
-            // Compute Y extents once per row
-            int py = tileScreenY + (int)(row * pixSize);
-            int ph = Math.max(1, (int)((row + 1) * pixSize) - (int)(row * pixSize));
+        int screenSize = Math.max(1, Math.round(128 * pixSize));
 
-            for (int col = 0; col < 128; col++) {
-                int px = tileScreenX + (int)(col * pixSize);
-                int pw = Math.max(1, (int)((col + 1) * pixSize) - (int)(col * pixSize));
-
-                int color = attach.isDiscovered(col, row)
-                        ? (MapColor.getRenderColor(colors[row * 128 + col] & 0xFF) | 0xFF000000)
-                        : FOG_COLOR;
-
-                context.fill(px, py, px + pw, py + ph, color);
-            }
+        var matrices = context.getMatrices();
+        matrices.push();
+        matrices.translate((float) tileScreenX, (float) tileScreenY, 0f);
+        if (pixSize != 1f) {
+            matrices.scale(pixSize, pixSize, 1f);
         }
+        // Draw the full 128×128 texture at (0,0) in scaled space.
+        // drawTexture(id, x, y, u, v, width, height, texW, texH)
+        context.drawTexture(tex, 0, 0, 0, 0, 128, 128, 128, 128);
+        matrices.pop();
     }
 
     // ── Faded edge overlay ────────────────────────────────────────────────

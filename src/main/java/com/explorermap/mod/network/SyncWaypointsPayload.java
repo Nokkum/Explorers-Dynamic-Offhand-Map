@@ -1,13 +1,11 @@
 package com.explorermap.mod.network;
 
 import com.explorermap.mod.ExplorerMapMod;
-import com.explorermap.mod.attachment.MapDiscoveryAttachment;
 import com.explorermap.mod.registry.ExplorerMapRegistry;
 import com.explorermap.mod.waypoint.Waypoint;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.item.FilledMapItem;
 import net.minecraft.network.PacketByteBuf;
@@ -17,6 +15,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 
 import java.util.List;
+import net.minecraft.client.MinecraftClient;
 
 /**
  * S2C: server pushes the full waypoint list for a specific map to the client.
@@ -67,12 +66,6 @@ public record SyncWaypointsPayload(
         ServerPlayNetworking.send(player, payload);
     }
 
-    // ── Registration (common side) ────────────────────────────────────────
-
-    public static void register() {
-        PayloadTypeRegistry.playS2C().register(ID, CODEC);
-    }
-
     // ── Client handler ────────────────────────────────────────────────────
 
     @Environment(EnvType.CLIENT)
@@ -83,7 +76,7 @@ public record SyncWaypointsPayload(
 
     @Environment(EnvType.CLIENT)
     private static void handleOnClient(SyncWaypointsPayload payload) {
-        var client = net.minecraft.client.MinecraftClient.getInstance();
+        var client = MinecraftClient.getInstance();
         if (client.world == null) return;
 
         var mapState = client.world.getMapState(FilledMapItem.getMapName(payload.mapId()));
@@ -91,10 +84,10 @@ public record SyncWaypointsPayload(
 
         var attachment = ExplorerMapMod.getOrCreate(mapState);
 
-        // Replace waypoint list entirely (server is authoritative)
-        // Clear + re-add preserves the existing object reference used by HUD
-        attachment.getWaypoints().clear();
-        attachment.getWaypoints().addAll(payload.waypoints());
+        // Replace waypoint list atomically via the synchronized helper.
+        // This prevents a ConcurrentModificationException if the render
+        // thread is iterating waypoints at the same moment.
+        attachment.syncWaypoints(payload.waypoints());
 
         ExplorerMapMod.LOGGER.debug("[ExplorerMap] Synced {} waypoints for map #{}",
                 payload.waypoints().size(), payload.mapId());

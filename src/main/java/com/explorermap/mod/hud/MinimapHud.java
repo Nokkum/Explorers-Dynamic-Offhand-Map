@@ -3,6 +3,7 @@ package com.explorermap.mod.hud;
 import com.explorermap.mod.ExplorerMapMod;
 import com.explorermap.mod.attachment.MapDiscoveryAttachment;
 import com.explorermap.mod.config.ExplorerMapConfig;
+import com.explorermap.mod.dimension.DimensionMapTracker;
 import com.explorermap.mod.expansion.ExpansionRecord;
 import com.explorermap.mod.expansion.TileGrid;
 import net.fabricmc.api.EnvType;
@@ -42,6 +43,11 @@ public class MinimapHud {
 
         MapState mapState = FilledMapItem.getMapState(offHand, client.world);
         if (mapState == null) return;
+
+        // ── Dimension gate ────────────────────────────────────────────────
+        // Suppress HUD if the map is from a different dimension.
+        if (!DimensionMapTracker.isMapRelevantForCurrentDimension(player, mapState)) return;
+
         MapDiscoveryAttachment attachment = ExplorerMapMod.getOrCreate(mapState);
 
         // ── Layout ────────────────────────────────────────────────────────
@@ -60,8 +66,8 @@ public class MinimapHud {
         }
 
         // ── Background ────────────────────────────────────────────────────
-        int bgAlpha = ((int)(cfg.opacity * 0.55f * 255) << 24);
-        context.fill(boxX - 2, boxY - 2, boxX + size + 2, boxY + size + 2, bgAlpha | 0x000000);
+        int bgAlpha = ((int)(cfg.opacity() * 0.55f * 255) << 24);
+        context.fill(boxX - 2, boxY - 2, boxX + size + 2, boxY + size + 2, bgAlpha);
 
         // ── Build tile grid ────────────────────────────────────────────────
         TileGrid grid = TileGrid.build(mapState, attachment, client.world);
@@ -73,8 +79,11 @@ public class MinimapHud {
 
         // ── Compass ───────────────────────────────────────────────────────
         if (cfg.showCompass) {
-            renderCompass(context, boxX + size - 18, boxY + 2, player.getYaw());
+            renderCompass(context, boxX + size - 18, boxY + 2);
         }
+
+        // ── Dimension label (Nether / The End) ────────────────────────────
+        renderDimensionLabel(context, player, boxX, boxY, size);
 
         // ── Expansion arrows (directions not yet unlocked) ────────────────
         if (cfg.showExpansionArrows) {
@@ -83,20 +92,26 @@ public class MinimapHud {
 
         // ── Border ────────────────────────────────────────────────────────
         context.drawBorder(boxX - 2, boxY - 2, size + 4, size + 4,
-                ((int)(cfg.opacity * 180) << 24) | 0x888888);
+                ((int)(cfg.opacity() * 180) << 24) | 0x888888);
     }
 
     // ── Compass ───────────────────────────────────────────────────────────
 
-    private static void renderCompass(DrawContext ctx, int x, int y, float yawDeg) {
-        // Rotating N indicator: starts pointing up (north), rotates with camera yaw
-        // We draw a static N at the top; a tiny arrow rotates to show facing direction
+    private static void renderCompass(DrawContext ctx, int x, int y) {
         ctx.drawText(MinecraftClient.getInstance().textRenderer, "N", x + 3, y, 0xFFFF5555, true);
-
-        // Small dot for E/W/S around the N
         ctx.drawText(MinecraftClient.getInstance().textRenderer, "·", x,      y + 10, 0xFF888888, false);
         ctx.drawText(MinecraftClient.getInstance().textRenderer, "·", x + 10, y + 10, 0xFF888888, false);
         ctx.drawText(MinecraftClient.getInstance().textRenderer, "·", x + 4,  y + 18, 0xFF888888, false);
+    }
+
+    private static void renderDimensionLabel(DrawContext ctx, ClientPlayerEntity player,
+                                              int boxX, int boxY, int size) {
+        String label = DimensionMapTracker.dimensionLabel(player);
+        // Only show non-Overworld labels to avoid visual clutter
+        if (label.equals("Overworld")) return;
+        var tr = MinecraftClient.getInstance().textRenderer;
+        int lw = tr.getWidth(label);
+        ctx.drawText(tr, label, boxX + size / 2 - lw / 2, boxY + size + 2, 0xFFAAAAAA, true);
     }
 
     // ── Expansion arrows ──────────────────────────────────────────────────

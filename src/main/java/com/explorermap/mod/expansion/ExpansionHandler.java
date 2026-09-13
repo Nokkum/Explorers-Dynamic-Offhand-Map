@@ -8,6 +8,7 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.Items;
 import net.minecraft.util.Hand;
 import net.minecraft.world.storage.MapState;
+import net.minecraft.item.FilledMapItem;
 
 /**
  * Client-side expansion helper.
@@ -55,7 +56,7 @@ public final class ExpansionHandler {
         var offHand = player.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand) || player.getWorld() == null) return false;
 
-        MapState state = net.minecraft.item.FilledMapItem.getMapState(offHand, player.getWorld());
+        MapState state = FilledMapItem.getMapState(offHand, player.getWorld());
         if (state == null) return false;
 
         MapDiscoveryAttachment attachment = ExplorerMapMod.getOrCreate(state);

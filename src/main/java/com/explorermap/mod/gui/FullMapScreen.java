@@ -43,12 +43,12 @@ public class FullMapScreen extends Screen {
     private MapState mapState;
     private MapDiscoveryAttachment attachment;
 
-    private float zoom = 1.0f;
-    private float panX = 0f, panY = 0f;
+    float zoom = 1.0f;
+    float panX = 0f, panY = 0f;
     private boolean dragging = false;
     private double dragStartX, dragStartY;
     private float panStartX, panStartY;
-    private boolean hdMode = false;
+    boolean hdMode = false;
 
     public FullMapScreen() {
         super(Text.translatable("screen.explorermap.full_map"));
@@ -97,10 +97,13 @@ public class FullMapScreen extends Screen {
         addDrawableChild(ButtonWidget.builder(
                 Text.literal(hdMode ? "[HD]" : " HD "),
                 btn -> {
-                    hdMode = !hdMode;
-                    // Rebuild buttons so label updates
-                    clearChildren();
-                    init();
+                    // Create a new screen with the toggled HD state
+                    FullMapScreen next = new FullMapScreen();
+                    next.hdMode = !this.hdMode;
+                    next.zoom   = this.zoom;
+                    next.panX   = this.panX;
+                    next.panY   = this.panY;
+                    if (client != null) client.setScreen(next);
                 }
         ).dimensions(cx + 200, toolY, 32, 20).build());
 
@@ -134,7 +137,7 @@ public class FullMapScreen extends Screen {
 
         if (mapState == null || attachment == null) {
             context.drawCenteredTextWithShadow(this.textRenderer,
-                    Text.literal("No filled map in off-hand"),
+                    Text.translatable("explorermap.hud.no_map"),
                     this.width / 2, this.height / 2, 0xFFAAAAAA);
             super.render(context, mouseX, mouseY, delta);
             return;
@@ -165,7 +168,7 @@ public class FullMapScreen extends Screen {
 
         // HD mode status line just below the toolbar
         if (hdMode) {
-            String hdLabel = "HD mode: Paper + Ink Sac + Compass per expansion";
+            String hdLabel = Text.translatable("explorermap.expansion.hd_cost").getString();
             int labelW = this.textRenderer.getWidth(hdLabel);
             context.drawTextWithShadow(this.textRenderer,
                     hdLabel, cx + size / 2 - labelW / 2, cy - 10, 0xFFFFCC44);
@@ -211,7 +214,8 @@ public class FullMapScreen extends Screen {
         ctx.fill(cx,                      cy + size + 4, cx + size,                  cy + size + 10, 0xFF222222);
         ctx.fill(cx,                      cy + size + 4, cx + (int)(size * frac),    cy + size + 10, 0xFF44AA44);
         ctx.drawTextWithShadow(this.textRenderer,
-                String.format("Explored: %.1f%%", frac * 100f), cx + 2, cy + size + 13, 0xFF888888);
+                String.format(Text.translatable("explorermap.hud.explored").getString(), frac * 100f),
+                        cx + 2, cy + size + 13, 0xFF888888);
 
         if (client.player != null) {
             String pos = String.format("X %.0f  Z %.0f", client.player.getX(), client.player.getZ());

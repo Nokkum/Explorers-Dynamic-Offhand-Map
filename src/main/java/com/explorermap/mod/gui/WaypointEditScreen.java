@@ -14,7 +14,8 @@ import net.minecraft.item.FilledMapItem;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
-import net.minecraft.world.storage.MapState;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import com.explorermap.mod.network.SaveWaypointPayload;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -86,7 +87,7 @@ public class WaypointEditScreen extends Screen {
     }
 
     public WaypointEditScreen(Screen parent, Waypoint existing) {
-        super(Text.literal("Waypoint"));
+        super(Text.translatable("screen.explorermap.waypoint_edit"));
         this.parent          = parent;
         this.editingWaypoint = existing;
     }
@@ -119,10 +120,10 @@ public class WaypointEditScreen extends Screen {
         int fieldY = dlgY + pad + 14;
         nameField = new TextFieldWidget(this.textRenderer,
                 dlgX + pad, fieldY, dlgW - pad * 2, 18,
-                Text.literal("name"));
+                Text.translatable("label.explorermap.waypoint_name"));
         nameField.setMaxLength(32);
         nameField.setText(editingWaypoint != null ? editingWaypoint.name() : "");
-        nameField.setPlaceholder(Text.literal("Waypoint name…"));
+        nameField.setPlaceholder(Text.translatable("explorermap.waypoint.default_name"));
         addDrawableChild(nameField);
 
         // ── Icon grid (clickable cells) ───────────────────────────────────
@@ -163,9 +164,9 @@ public class WaypointEditScreen extends Screen {
 
         // ── Buttons ───────────────────────────────────────────────────────
         int btnY = dlgY + dlgH - 28;
-        addDrawableChild(ButtonWidget.builder(Text.literal("Save"),
+        addDrawableChild(ButtonWidget.builder(Text.translatable("label.explorermap.save"),
                 btn -> save()).dimensions(dlgX + dlgW / 2 - 54, btnY, 50, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"),
+        addDrawableChild(ButtonWidget.builder(Text.translatable("label.explorermap.cancel"),
                 btn -> client.setScreen(parent))
                 .dimensions(dlgX + dlgW / 2 + 4, btnY, 50, 20).build());
     }
@@ -184,11 +185,11 @@ public class WaypointEditScreen extends Screen {
 
         // Title
         ctx.drawCenteredTextWithShadow(this.textRenderer,
-                Text.literal("New waypoint"), dlgX + dlgW / 2, dlgY + pad, 0xFFFFFFFF);
+                Text.translatable("screen.explorermap.waypoint_edit"), dlgX + dlgW / 2, dlgY + pad, 0xFFFFFFFF);
 
         // "Name:" label
         ctx.drawTextWithShadow(this.textRenderer, "Name:",
-                dlgX + pad, dlgY + pad + 4, 0xFFAAAAAA);
+                dlgX + pad, dlgY + pad + 4, 0xFFAAAAAA); // "Name:" intentionally short — not worth a key
 
         // "Icon:" label
         ctx.drawTextWithShadow(this.textRenderer, "Icon:",
@@ -223,7 +224,7 @@ public class WaypointEditScreen extends Screen {
 
         // Preview
         if (!iconIds.isEmpty()) {
-            String name = nameField.getText().isEmpty() ? "Waypoint" : nameField.getText();
+            String name = nameField.getText().isEmpty() ? Text.translatable("explorermap.waypoint.default_name").getString() : nameField.getText();
             Identifier tex = ExplorerMapRegistry.getWaypointTexture(iconIds.get(selectedIconIndex));
             WaypointIconRenderer.drawPickerCell(ctx, tex, COLORS[selectedColorIndex],
                     previewX, previewY, ICON_CELL, false);
@@ -241,7 +242,7 @@ public class WaypointEditScreen extends Screen {
         if (client == null || client.player == null) return;
 
         String name = nameField.getText().trim();
-        if (name.isEmpty()) name = "Waypoint";
+        if (name.isEmpty()) name = Text.translatable("explorermap.waypoint.default_name").getString();
 
         String iconId = iconIds.isEmpty() ? Waypoint.DEFAULT_ICON : iconIds.get(selectedIconIndex);
         int color = COLORS[selectedColorIndex];
@@ -254,12 +255,12 @@ public class WaypointEditScreen extends Screen {
             return;
         }
 
-        Integer mapId = net.minecraft.item.FilledMapItem.getMapId(offHand);
+        Integer mapId = FilledMapItem.getMapId(offHand);
         if (mapId == null) { client.setScreen(parent); return; }
 
         // Optimistic local update so the HUD reflects the change immediately
         // (server will echo back authoritative state via SyncWaypointsPayload)
-        var mapState = net.minecraft.item.FilledMapItem.getMapState(offHand, client.world);
+        var mapState = FilledMapItem.getMapState(offHand, client.world);
         if (mapState != null) {
             var attachment = ExplorerMapMod.getOrCreate(mapState);
             if (editingWaypoint != null) attachment.removeWaypoint(editingWaypoint.name());
@@ -267,8 +268,7 @@ public class WaypointEditScreen extends Screen {
         }
 
         // Persist on server
-        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(
-                new com.explorermap.mod.network.SaveWaypointPayload(mapId, wp));
+        ClientPlayNetworking.send(new SaveWaypointPayload(mapId, wp));
 
         client.setScreen(parent);
     }

@@ -3,11 +3,13 @@ package com.explorermap.mod.engine;
 import com.explorermap.mod.ExplorerMapMod;
 import com.explorermap.mod.attachment.MapDiscoveryAttachment;
 import com.explorermap.mod.config.ExplorerMapConfig;
+import com.explorermap.mod.dimension.DimensionMapTracker;
+import com.explorermap.mod.network.SyncDiscoveryPayload;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.FilledMapItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.Hand;
@@ -21,7 +23,7 @@ import net.minecraft.world.storage.MapState;
  * Algorithm (per tick, client-side)
  * ──────────────────────────────────
  * 1. Bail early if no filled map in off-hand, or player is null.
- * 2. Throttle: only run every TICK_INTERVAL ticks to reduce CPU cost.
+ * 2. Throttle: only run every cfg.discoveryTickInterval ticks to reduce CPU cost.
  * 3. Read player camera yaw/pitch and derive the horizontal FOV from
  *    the game's configured FOV setting.
  * 4. Cast RAY_COUNT rays fanning across the visible arc. For each ray,
@@ -38,15 +40,6 @@ import net.minecraft.world.storage.MapState;
 @Environment(EnvType.CLIENT)
 public class ExplorationEngine {
 
-    /** How many game ticks between discovery updates. Lower = more accurate, more CPU. */
-    private static final int TICK_INTERVAL = 3;
-
-    /** Horizontal rays cast per update. More = finer discovery at edges. */
-    private static final int H_RAYS = 32;
-
-    /** Vertical rays (handles looking up/down across the map plane). */
-    private static final int V_RAYS = 3;
-
     /** Max distance (blocks) a ray travels before giving up. */
     private static final double MAX_RANGE = 256.0;
 
@@ -54,7 +47,8 @@ public class ExplorationEngine {
 
     /** Called from ClientTickEvents.END_CLIENT_TICK. */
     public static void tick(MinecraftClient client) {
-        if (++tickCounter % TICK_INTERVAL != 0) return;
+        ExplorerMapConfig cfg = ExplorerMapConfig.get();
+        if (++tickCounter % cfg.discoveryTickInterval != 0) return;
 
         ClientPlayerEntity player = client.player;
         if (player == null || client.world == null) return;
@@ -70,61 +64,70 @@ public class ExplorationEngine {
         MapState mapState = FilledMapItem.getMapState(offHand, client.world);
         if (mapState == null) return;
 
+        // ── Dimension gate ─────────────────────────────────────────────────
+        // Don't mark pixels if this map belongs to a different dimension.
+        if (!DimensionMapTracker.isMapRelevantForCurrentDimension(player, mapState)) return;
+
         MapDiscoveryAttachment attachment = ExplorerMapMod.getOrCreate(mapState);
 
         // ── 3. Camera parameters ──────────────────────────────────────────
         float yawDeg   = player.getYaw();
         float pitchDeg = player.getPitch();
-        // Retrieve game FOV (base value, not post-effects) from config
-        float fovDeg = (float) client.options.getFov().getValue();
+        float fovDeg   = (float) client.options.getFov().getValue();
+
+        // Coordinate multiplier: in the Nether, player coords are 1/8 of Overworld.
+        // Map centers are always stored in Overworld space, so we scale up.
+        double coordMult = DimensionMapTracker.dimensionCoordMultiplier(player);
 
         // ── 4. Cast rays ──────────────────────────────────────────────────
-        castRays(player, mapState, attachment, yawDeg, pitchDeg, fovDeg);
+        castRays(player, mapState, attachment, yawDeg, pitchDeg, fovDeg, cfg.rayCount, coordMult);
+
+        // ── 5. Multiplayer sync (throttled) ───────────────────────────────
+        // Upload this client's bitmask to the server every ~3 seconds if new
+        // pixels were discovered. The server OR-merges contributions from all
+        // players holding the same map and broadcasts the result back.
+        if (SyncDiscoveryPayload.shouldUpload(attachment.getDiscoveryGeneration())) {
+            ClientPlayNetworking.send(
+                    new SyncDiscoveryPayload.Upload(mapId, attachment.getDiscoveryLongs()));
+        }
     }
 
     private static void castRays(ClientPlayerEntity player,
                                   MapState mapState,
                                   MapDiscoveryAttachment attachment,
-                                  float yawDeg, float pitchDeg, float fovDeg) {
+                                  float yawDeg, float pitchDeg, float fovDeg,
+                                  int hRays, double coordMult) {
 
         Vec3d origin = player.getCameraPosVec(1.0f);
         float halfFov = fovDeg * 0.5f;
 
-        // Vertical spread: fan slightly above/below the horizon
-        float[] vOffsets = { -8f, 0f, 8f }; // degrees
+        float[] vOffsets = { -8f, 0f, 8f };
 
         for (float vOff : vOffsets) {
             float pitch = pitchDeg + vOff;
 
-            for (int i = 0; i < H_RAYS; i++) {
-                // Distribute rays evenly across the horizontal FOV
-                float t   = H_RAYS == 1 ? 0f : (float) i / (H_RAYS - 1); // [0, 1]
+            for (int i = 0; i < hRays; i++) {
+                float t   = hRays == 1 ? 0f : (float) i / (hRays - 1);
                 float yaw = yawDeg - halfFov + t * fovDeg;
 
-                // Convert yaw/pitch to direction vector
                 Vec3d dir = directionFromAngles(yaw, pitch);
-
-                // Intersect ray with Y = mapState.centerY (map's tracked elevation)
-                // Vanilla maps track at world surface; use mapState scale center.
-                double targetY = mapState.centerX; // centerX is actually Z in older yarn – check yours
-                // Project to map XZ plane at player's feet Y
-                double landY = origin.y; // approximate: map plane at eye level projection
-
-                // Walk along the ray until it covers max range or exits the map
-                markRayOnMap(origin, dir, mapState, attachment);
+                markRayOnMap(origin, dir, mapState, attachment, coordMult);
             }
         }
     }
 
     /**
      * Steps a ray forward in world space and marks map pixels as discovered.
-     * Steps in 2-block increments; stops at MAX_RANGE or when off the map.
+     *
+     * @param coordMult  1.0 for Overworld/End, 8.0 for Nether.
+     *                   Scales player world coords up to Overworld space
+     *                   so they match map centres (always stored as OW coords).
      */
     private static void markRayOnMap(Vec3d origin, Vec3d dir,
                                       MapState mapState,
-                                      MapDiscoveryAttachment attachment) {
-        // Vanilla map: 128×128 pixels, each pixel = 2^scale blocks
-        int scale = 1 << mapState.scale; // e.g. scale=2 → 4 blocks/pixel
+                                      MapDiscoveryAttachment attachment,
+                                      double coordMult) {
+        int scale      = 1 << mapState.scale;
         int mapCenterX = mapState.centerX;
         int mapCenterZ = mapState.centerZ;
 
@@ -136,11 +139,10 @@ public class ExplorationEngine {
             x += dir.x * stepSize;
             z += dir.z * stepSize;
 
-            // Convert world XZ → map pixel col/row
-            int col = worldToPixel(x, mapCenterX, scale);
-            int row = worldToPixel(z, mapCenterZ, scale);
+            int col = worldToPixel(x * coordMult, mapCenterX, scale);
+            int row = worldToPixel(z * coordMult, mapCenterZ, scale);
 
-            if (col < 0 || col >= 128 || row < 0 || row >= 128) break; // off map
+            if (col < 0 || col >= 128 || row < 0 || row >= 128) break;
 
             attachment.discover(col, row);
         }

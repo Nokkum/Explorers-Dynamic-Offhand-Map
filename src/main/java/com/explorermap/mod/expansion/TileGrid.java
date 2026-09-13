@@ -5,6 +5,9 @@ import net.minecraft.world.storage.MapState;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.client.world.ClientWorld;
+import net.minecraft.item.FilledMapItem;
+import com.explorermap.mod.ExplorerMapMod;
 
 /**
  * Represents the full stitched grid of map tiles known to the player.
@@ -27,10 +30,11 @@ import java.util.List;
 public final class TileGrid {
 
     public record TileEntry(
+            int mapId,           // vanilla integer map ID (for texture cache key)
             MapState state,
             MapDiscoveryAttachment attachment,
-            int gridX,   // column offset from root (West = negative)
-            int gridZ    // row offset from root (North = negative)
+            int gridX,           // column offset from root (West = negative)
+            int gridZ            // row offset from root (North = negative)
     ) {}
 
     private final List<TileEntry> tiles = new ArrayList<>();
@@ -75,17 +79,25 @@ public final class TileGrid {
      */
     public static TileGrid build(MapState rootState,
                                   MapDiscoveryAttachment rootAttachment,
-                                  net.minecraft.client.world.ClientWorld world) {
+                                  ClientWorld world) {
 
         int scale         = 1 << rootState.scale;
         int tileBlockSize = 128 * scale;
         TileGrid grid     = new TileGrid(tileBlockSize);
 
+        // Resolve root map ID from the world's map registry
+        int rootMapId = resolveMapId(rootState, world);
+
         // Always include root at (0, 0)
-        grid.tiles.add(new TileEntry(rootState, rootAttachment, 0, 0));
+        grid.tiles.add(new TileEntry(rootMapId, rootState, rootAttachment, 0, 0));
+
+        // Snapshot the expansion list before iterating — if the network thread
+        // receives a GrantExpansionPayload concurrently, addExpansion() would modify
+        // the list underneath us and throw ConcurrentModificationException.
+        List<ExpansionRecord> expansionSnapshot = new ArrayList<>(rootAttachment.getExpansions());
 
         // Add each expansion
-        for (ExpansionRecord exp : rootAttachment.getExpansions()) {
+        for (ExpansionRecord exp : expansionSnapshot) {
             int gx = 0, gz = 0;
             switch (exp.direction()) {
                 case NORTH -> gz = -1;
@@ -95,16 +107,37 @@ public final class TileGrid {
             }
 
             // Resolve the vanilla MapState for this tile
-            var key      = net.minecraft.item.FilledMapItem.getMapName(exp.mapId());
+            var key      = FilledMapItem.getMapName(exp.mapId());
             var adjState = world.getMapState(key);
             if (adjState == null) continue; // not yet synced from server
 
             // Get or create attachment for this adjacent tile
-            var adjAttachment = com.explorermap.mod.ExplorerMapMod.getOrCreate(adjState);
+            var adjAttachment = ExplorerMapMod.getOrCreate(adjState);
 
-            grid.tiles.add(new TileEntry(adjState, adjAttachment, gx, gz));
+            grid.tiles.add(new TileEntry(exp.mapId(), adjState, adjAttachment, gx, gz));
         }
 
         return grid;
+    }
+
+    /** Scans the world's map registry to find the integer ID for a given MapState. */
+    private static int resolveMapId(MapState state, ClientWorld world) {
+        // Walk map IDs from 0 up to the world's current max map ID.
+        // The client mirrors the server's MapIdCount via the map data packets,
+        // accessible through the world's map storage. We scan by identity (==)
+        // since each MapState is a singleton per ID on the client.
+        // Stop early if we hit 100 consecutive nulls — IDs are assigned sequentially
+        // so a run of nulls past the current max means we're done.
+        int nullRun = 0;
+        for (int id = 0; id < 32768; id++) {
+            var candidate = world.getMapState(FilledMapItem.getMapName(id));
+            if (candidate == null) {
+                if (++nullRun > 20) break; // 20 consecutive nulls = past all registered maps
+                continue;
+            }
+            nullRun = 0;
+            if (candidate == state) return id;
+        }
+        return -1; // not found — use -1 as cache key (renders fine, just no sharing)
     }
 }

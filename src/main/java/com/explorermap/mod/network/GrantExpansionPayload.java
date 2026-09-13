@@ -6,12 +6,13 @@ import com.explorermap.mod.registry.ExplorerMapRegistry;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.item.FilledMapItem;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.Hand;
 
 /**
  * S2C: server grants an expansion, sending the real vanilla map ID back to client.
@@ -48,10 +49,10 @@ public record GrantExpansionPayload(
 
     @Environment(EnvType.CLIENT)
     private static void handleOnClient(GrantExpansionPayload payload) {
-        var client = net.minecraft.client.MinecraftClient.getInstance();
+        var client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
-        var offHand = client.player.getStackInHand(net.minecraft.util.Hand.OFF_HAND);
+        var offHand = client.player.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) return;
 
         var mapState = FilledMapItem.getMapState(offHand, client.world);

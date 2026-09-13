@@ -10,7 +10,11 @@ import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Identifier;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.FilledMapItem;
+import net.minecraft.item.Items;
+import net.minecraft.util.Hand;
+import net.minecraft.item.Item;
 
 /**
  * C2S packet: client requests a directional map expansion.
@@ -61,12 +65,12 @@ public record RequestExpansionPayload(
     private static void handleOnServer(ServerPlayerEntity player,
                                         RequestExpansionPayload payload) {
         // 1. Validate player has the map in their off-hand
-        var offHand = player.getStackInHand(net.minecraft.util.Hand.OFF_HAND);
+        var offHand = player.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) return;
 
         // 2. Resolve current MapState on the server
         var world    = player.getServerWorld();
-        var mapState = net.minecraft.item.FilledMapItem.getMapState(offHand, world);
+        var mapState = FilledMapItem.getMapState(offHand, world);
         if (mapState == null) return;
 
         // 3. Guard: already expanded this direction?
@@ -97,21 +101,21 @@ public record RequestExpansionPayload(
 
     private static boolean consumeServerSide(ServerPlayerEntity player, boolean highDetail) {
         var inv = player.getInventory();
-        if (!inv.contains(net.minecraft.item.Items.PAPER.getDefaultStack())) return false;
+        if (!inv.contains(Items.PAPER.getDefaultStack())) return false;
         if (highDetail) {
-            if (!inv.contains(net.minecraft.item.Items.INK_SAC.getDefaultStack())) return false;
-            if (!inv.contains(net.minecraft.item.Items.COMPASS.getDefaultStack())) return false;
+            if (!inv.contains(Items.INK_SAC.getDefaultStack())) return false;
+            if (!inv.contains(Items.COMPASS.getDefaultStack())) return false;
         }
-        removeOne(inv, net.minecraft.item.Items.PAPER);
+        removeOne(inv, Items.PAPER);
         if (highDetail) {
-            removeOne(inv, net.minecraft.item.Items.INK_SAC);
-            removeOne(inv, net.minecraft.item.Items.COMPASS);
+            removeOne(inv, Items.INK_SAC);
+            removeOne(inv, Items.COMPASS);
         }
         return true;
     }
 
-    private static void removeOne(net.minecraft.entity.player.PlayerInventory inv,
-                                   net.minecraft.item.Item item) {
+    private static void removeOne(PlayerInventory inv,
+                                   Item item) {
         for (int i = 0; i < inv.size(); i++) {
             var slot = inv.getStack(i);
             if (slot.isOf(item)) { slot.decrement(1); return; }

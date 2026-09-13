@@ -6,6 +6,7 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.util.Identifier;
+import net.minecraft.client.MinecraftClient;
 
 /**
  * Draws waypoint icons on the mini-map HUD and full-map screen.
@@ -70,11 +71,21 @@ public final class WaypointIconRenderer {
         // Outline/shadow dot behind the icon
         ctx.fill(x - 1, y - 1, x + size + 1, y + size + 1, 0x88000000);
 
-        // Draw texture with colour tint.
-        // drawTexture signature (1.21): drawTexture(id, x, y, u, v, width, height,
-        //                                           textureWidth, textureHeight)
-        // We draw the full 16×16 source scaled to (size×size) on screen.
-        ctx.drawTexture(texture, x, y, size, size, 0, 0, 16, 16, 16, 16);
+        // Draw texture scaled to (size×size).
+        // DrawContext.drawTexture(Identifier, int x, int y, int u, int v,
+        //                         int width, int height, int texW, int texH)
+        // To scale, we push/pop the matrix stack and draw at (0,0) after translating.
+        var matrices = ctx.getMatrices();
+        matrices.push();
+        if (size != 16) {
+            float sc = size / 16f;
+            matrices.translate((float) x, (float) y, 0f);
+            matrices.scale(sc, sc, 1f);
+            ctx.drawTexture(texture, 0, 0, 0, 0, 16, 16, 16, 16);
+        } else {
+            ctx.drawTexture(texture, x, y, 0, 0, 16, 16, 16, 16);
+        }
+        matrices.pop();
 
         // Apply tint as a colour-multiply overlay (semi-transparent if white)
         if (tintARGB != Waypoint.DEFAULT_COLOR) {
@@ -102,7 +113,7 @@ public final class WaypointIconRenderer {
         draw(ctx, waypoint, sx, sy, iconSize);
 
         if (showLabel) {
-            var client = net.minecraft.client.MinecraftClient.getInstance();
+            var client = MinecraftClient.getInstance();
             if (client.textRenderer != null) {
                 int labelX = sx + iconSize / 2 + 2;
                 int labelY = sy - 4;
