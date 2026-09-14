@@ -6,7 +6,7 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.util.Identifier;
-import net.minecraft.world.storage.MapState;
+import net.minecraft.item.map.MapState;
 
 /**
  * Shared pixel-rendering utility for the mini-map HUD and the full map screen.
@@ -157,7 +157,7 @@ public final class TileRenderer {
                                           int tileScreenX, int tileScreenY,
                                           float pixSize) {
         Identifier tex = TileTextureCache.getInstance()
-                .getOrUpdate(tile.mapId(), tile.state(), tile.attachment());
+                .getOrUpdate(tile.mapId(), tile.state(), tile.entry());
 
         var matrices = context.getMatrices();
         matrices.push();

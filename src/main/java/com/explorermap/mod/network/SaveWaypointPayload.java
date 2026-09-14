@@ -1,11 +1,11 @@
 package com.explorermap.mod.network;
 
 import com.explorermap.mod.ExplorerMapMod;
+import com.explorermap.mod.data.ExplorerMapSavedData;
 import com.explorermap.mod.registry.ExplorerMapRegistry;
 import com.explorermap.mod.waypoint.Waypoint;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.item.FilledMapItem;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
@@ -15,19 +15,23 @@ import net.minecraft.server.network.ServerPlayerEntity;
 /**
  * C2S: client saves a new (or updated) waypoint for a specific map.
  *
- * Flow:
- *   1. Player places / edits a waypoint in WaypointEditScreen.
- *   2. On save, WaypointEditScreen sends SaveWaypointPayload(mapId, waypoint).
- *   3. Server validates the map belongs to this player's session, then:
- *      a. Adds/replaces the waypoint in the server-side MapDiscoveryAttachment.
- *      b. Replies with SyncWaypointsPayload(mapId, fullList) so the client
- *         gets the authoritative state back.
+ * Server-side validation
+ * ───────────────────────
+ * - The map must actually exist in the requesting player's dimension.
+ * - Waypoint coordinates are rejected if NaN or infinite. A naive range
+ *   check such as `Math.abs(x - center) > maxDist` does NOT catch NaN,
+ *   since every comparison against NaN in Java evaluates to false — NaN
+ *   would silently pass an unguarded range check and get persisted.
+ * - Coordinates must be within a generous radius of the map's center to
+ *   prevent a waypoint being planted arbitrarily far away.
+ * - Name length and icon/color are bounded by Waypoint's own codec limits.
  *
- * "Replace" semantics: if a waypoint with the same name already exists in the
- * attachment it is removed before the new one is added.
+ * "Replace" semantics: a waypoint with the same name is replaced.
  *
- * The mapId comes from FilledMapItem.getMapId(offHand) on the client side,
- * so it is always the vanilla integer map ID.
+ * On success, the server pushes the updated list to every player currently
+ * holding this map (SyncWaypointsPayload.broadcastTo), not just the sender —
+ * otherwise a second player holding the same map would not see the change
+ * until their next relog.
  */
 public record SaveWaypointPayload(int mapId, Waypoint waypoint) implements CustomPayload {
 
@@ -36,28 +40,23 @@ public record SaveWaypointPayload(int mapId, Waypoint waypoint) implements Custo
 
     public static final PacketCodec<PacketByteBuf, SaveWaypointPayload> CODEC =
             PacketCodec.tuple(
-                    PacketCodecs.VAR_INT,                      SaveWaypointPayload::mapId,
-                    PacketCodecs.codec(Waypoint.CODEC),        SaveWaypointPayload::waypoint,
+                    PacketCodecs.VAR_INT,                SaveWaypointPayload::mapId,
+                    PacketCodecs.codec(Waypoint.CODEC),  SaveWaypointPayload::waypoint,
                     SaveWaypointPayload::new
             );
 
     @Override
     public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
 
-    // ── Registration ──────────────────────────────────────────────────────
-
-    /** Call from ExplorerMapMod.onInitialize(). */
     public static void register() {
         PayloadTypeRegistry.playC2S().register(ID, CODEC);
         ServerPlayNetworking.registerGlobalReceiver(ID, (payload, context) ->
                 context.server().execute(() -> handleOnServer(context.player(), payload)));
     }
 
-    // ── Server handler ────────────────────────────────────────────────────
-
     private static void handleOnServer(ServerPlayerEntity player, SaveWaypointPayload payload) {
         var world    = player.getServerWorld();
-        var mapState = world.getMapState(FilledMapItem.getMapName(payload.mapId()));
+        var mapState = world.getMapState(new net.minecraft.component.type.MapIdComponent(payload.mapId()));
 
         if (mapState == null) {
             ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: map #{} not found for {}",
@@ -65,26 +64,31 @@ public record SaveWaypointPayload(int mapId, Waypoint waypoint) implements Custo
             return;
         }
 
-        // Basic sanity: waypoint world coords should be within ~2 map-tile widths
-        // of the map centre to prevent griefing across dimensions / wrong maps.
-        int scale      = 1 << mapState.scale;
-        int maxDist    = 256 * scale; // 2 tile radii
-        if (Math.abs(payload.waypoint().worldX() - mapState.centerX) > maxDist
-         || Math.abs(payload.waypoint().worldZ() - mapState.centerZ) > maxDist) {
-            ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: coords out of range, rejected");
+        double wx = payload.waypoint().worldX();
+        double wz = payload.waypoint().worldZ();
+
+        // Reject NaN/Infinity explicitly — a bare range check would let NaN
+        // through silently, since every comparison against NaN is false.
+        if (!Double.isFinite(wx) || !Double.isFinite(wz)) {
+            ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: non-finite coordinates rejected from {}",
+                    player.getName().getString());
             return;
         }
 
-        var attachment = ExplorerMapMod.getOrCreate(mapState);
+        int scale   = 1 << mapState.scale;
+        int maxDist = 256 * scale; // 2 tile radii
+        if (Math.abs(wx - mapState.centerX) > maxDist || Math.abs(wz - mapState.centerZ) > maxDist) {
+            ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: coordinates out of range, rejected");
+            return;
+        }
 
-        // Replace-by-name: remove old entry if editing
-        attachment.removeWaypoint(payload.waypoint().name());
-        attachment.addWaypoint(payload.waypoint());
+        var savedData = ExplorerMapSavedData.get(player.getServer());
+        savedData.removeWaypoint(world, payload.mapId(), payload.waypoint().name());
+        savedData.addWaypoint(world, payload.mapId(), payload.waypoint());
 
         ExplorerMapMod.LOGGER.debug("[ExplorerMap] Saved waypoint '{}' on map #{}",
                 payload.waypoint().name(), payload.mapId());
 
-        // Echo authoritative list back to client
-        SyncWaypointsPayload.sendTo(player, payload.mapId());
+        SyncWaypointsPayload.broadcastTo(player.getServer(), payload.mapId());
     }
 }

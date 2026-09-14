@@ -3,151 +3,55 @@ package com.explorermap.mod.dimension;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.world.World;
-import net.minecraft.world.storage.MapState;
+import net.minecraft.item.map.MapState;
 import net.minecraft.text.Text;
+import net.minecraft.world.World;
 
 /**
- * Resolves dimension compatibility between the player's current world and
- * the map held in the off-hand.
+ * Dimension relevance checks for the held map.
  *
- * The problem
- * ───────────
- * Vanilla MapStates track centerX/centerZ in the Overworld coordinate space,
- * even for maps created in the Nether. There is no public field on MapState
- * that directly exposes which dimension a map was created in.
- *
- * Our approach
- * ────────────
- * We infer the map's dimension by comparing it against the player's position
- * in each dimension using a coordinate plausibility check:
- *
- *   1. If the player is in the Overworld and the map's center is within
- *      a plausible Overworld radius, treat the map as an Overworld map.
- *   2. If the player is in the Nether and the map's center divided by 8
- *      is close to the player's Nether position, treat the map as a Nether map.
- *      (Nether coordinates are 1:8 of Overworld, but vanilla maps store Overworld coords.)
- *   3. The End has only one "center" — maps made there always center near (0,0).
- *
- * This heuristic is reliable because:
- *   - Overworld maps are always centered at Overworld coords.
- *   - Nether maps are also centered at Overworld coords (Minecraft stores them
- *     in Overworld space universally), so a Nether map centered at OW (800, 800)
- *     corresponds to Nether position (100, 100).
- *   - The End is unambiguous since it only has one landmass.
- *
- * When dimension is mismatched, the HUD is suppressed rather than showing
- * a misleading map from another dimension.
- *
- * Nether scale correction
- * ───────────────────────
- * Maps made in the Nether cover the same block count as their Overworld
- * equivalent, but rendered positions need to account for the 1:8 coordinate
- * ratio. ExplorationEngine uses worldToPixel() which is purely XZ-based —
- * if the player is in the Nether at (100, 100) and the map center is at
- * OW (800, 800), the pixel math already works correctly because the map
- * center is stored in Overworld coords and we compare to Nether*8.
+ * An earlier revision of this class inferred a map's dimension from
+ * coordinate heuristics (comparing player position against map center,
+ * with a hand-rolled ×8 conversion for the Nether) because it assumed
+ * MapState carried no dimension information of its own. That assumption
+ * was wrong: MapState has always had a `final RegistryKey<World> dimension`
+ * field. Reading it directly makes every coordinate heuristic unnecessary —
+ * there is also no coordinate conversion to do, since each dimension has
+ * its own independent block-coordinate space for maps created within it;
+ * a map made in the Nether stores Nether coordinates, not Overworld
+ * coordinates scaled down.
  */
 @Environment(EnvType.CLIENT)
 public final class DimensionMapTracker {
 
-    /** Maximum distance (in map-scale blocks) the player can be from map centre
-     *  before we consider the map a different-dimension map. */
-    private static final int PLAUSIBILITY_RADIUS_TILES = 16; // 16 tile widths
-
     private DimensionMapTracker() {}
 
     /**
-     * Returns true if the map held in the player's off-hand is relevant to
-     * the player's current dimension and should be shown in the HUD.
-     *
-     * Returns false (suppress HUD) if:
-     *  - No filled map in off-hand.
-     *  - Map center is implausibly far from the player's dimension-adjusted position.
-     *  - Player is in the End and the map is not an End map.
+     * Returns true if the given map was created in the dimension the player
+     * currently occupies. Vanilla itself will not let a map update outside
+     * its own dimension, so this mirrors that same restriction for our
+     * exploration engine and HUD.
      */
-    public static boolean isMapRelevantForCurrentDimension(ClientPlayerEntity player,
-                                                             MapState mapState) {
-        RegistryKey<World> dim = player.getWorld().getRegistryKey();
-        int scale = 1 << mapState.scale;
-        int tileBlocks = 128 * scale;
-        int maxDist    = tileBlocks * PLAUSIBILITY_RADIUS_TILES;
-
-        // Map center is always stored in Overworld coordinate space.
-        int mapCX = mapState.centerX;
-        int mapCZ = mapState.centerZ;
-
-        if (dim.equals(World.OVERWORLD)) {
-            // Player OW position vs map center
-            double dx = player.getX() - mapCX;
-            double dz = player.getZ() - mapCZ;
-            return Math.abs(dx) <= maxDist && Math.abs(dz) <= maxDist;
-
-        } else if (dim.equals(World.NETHER)) {
-            // Nether coords * 8 = Overworld coords
-            double owX = player.getX() * 8.0;
-            double owZ = player.getZ() * 8.0;
-            double dx = owX - mapCX;
-            double dz = owZ - mapCZ;
-            return Math.abs(dx) <= maxDist && Math.abs(dz) <= maxDist;
-
-        } else if (dim.equals(World.END)) {
-            // End maps are always centered near (0, 0) in OW space convention.
-            // Accept any map whose center is within 2 tile widths of origin.
-            int endRadius = tileBlocks * 2;
-            return Math.abs(mapCX) <= endRadius && Math.abs(mapCZ) <= endRadius;
-
-        } else {
-            // Modded dimension: show the map if the player is within range
-            // using the OW coordinate space (best-effort).
-            double dx = player.getX() - mapCX;
-            double dz = player.getZ() - mapCZ;
-            return Math.abs(dx) <= maxDist && Math.abs(dz) <= maxDist;
-        }
+    public static boolean isMapRelevantForCurrentDimension(ClientPlayerEntity player, MapState mapState) {
+        return mapState.dimension.equals(player.getWorld().getRegistryKey());
     }
 
-    /**
-     * Returns the coordinate multiplier to apply when converting player world
-     * coordinates to map-pixel coordinates for the current dimension.
-     *
-     * In the Nether the player's X/Z are 1/8 of Overworld, but map centers
-     * are stored in Overworld space, so we multiply by 8 before pixel math.
-     * In all other dimensions the multiplier is 1.0.
-     */
-    public static double dimensionCoordMultiplier(ClientPlayerEntity player) {
-        RegistryKey<World> dim = player.getWorld().getRegistryKey();
-        return dim.equals(World.NETHER) ? 8.0 : 1.0;
-    }
-
-    /**
-     * Returns true if the player is currently in the Overworld.
-     * Used by the HUD to decide whether to show a dimension label at all —
-     * comparing against the registry key directly (not the localized string)
-     * keeps this correct under any language setting.
-     */
+    /** Returns true if the player is currently in the Overworld. */
     public static boolean isOverworld(ClientPlayerEntity player) {
         return player.getWorld().getRegistryKey().equals(World.OVERWORLD);
     }
 
     /**
-     * Human-readable dimension label for the HUD compass/status line.
-     * Uses translation keys for vanilla dimensions so the label localizes
-     * correctly; modded dimensions fall back to a formatted registry path
-     * since we can't know their translation keys in advance.
+     * Human-readable dimension label for the HUD status line, using
+     * translation keys for the three vanilla dimensions and falling back to
+     * a formatted registry path for modded ones (whose translation keys we
+     * can't know in advance).
      */
     public static String dimensionLabel(ClientPlayerEntity player) {
-        RegistryKey<World> dim = player.getWorld().getRegistryKey();
-        if (dim.equals(World.OVERWORLD)) {
-            return Text.translatable("explorermap.dimension.overworld").getString();
-        }
-        if (dim.equals(World.NETHER)) {
-            return Text.translatable("explorermap.dimension.nether").getString();
-        }
-        if (dim.equals(World.END)) {
-            return Text.translatable("explorermap.dimension.end").getString();
-        }
-        // Modded dimension: no translation key available, format the registry path directly
+        var dim = player.getWorld().getRegistryKey();
+        if (dim.equals(World.OVERWORLD)) return Text.translatable("explorermap.dimension.overworld").getString();
+        if (dim.equals(World.NETHER))    return Text.translatable("explorermap.dimension.nether").getString();
+        if (dim.equals(World.END))       return Text.translatable("explorermap.dimension.end").getString();
         String path = dim.getValue().getPath();
         return Character.toUpperCase(path.charAt(0)) + path.substring(1).replace('_', ' ');
     }

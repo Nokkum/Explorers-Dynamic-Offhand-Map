@@ -1,22 +1,24 @@
 package com.explorermap.mod.network;
 
 import com.explorermap.mod.ExplorerMapMod;
+import com.explorermap.mod.data.ClientMapCache;
+import com.explorermap.mod.data.MapIdentity;
 import com.explorermap.mod.expansion.ExpansionRecord;
 import com.explorermap.mod.registry.ExplorerMapRegistry;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.item.FilledMapItem;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.Hand;
 
 /**
- * S2C: server grants an expansion, sending the real vanilla map ID back to client.
- * Now carries highDetail flag so the client can record it accurately.
+ * S2C: server grants an expansion, sending the real vanilla map ID back to
+ * the client. Carries highDetail so the client's local mirror records it
+ * accurately.
  */
 public record GrantExpansionPayload(
         ExpansionRecord.Direction direction,
@@ -55,14 +57,17 @@ public record GrantExpansionPayload(
         var offHand = client.player.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) return;
 
-        var mapState = FilledMapItem.getMapState(offHand, client.world);
+        var mapState = MapIdentity.stateOf(offHand, client.world);
         if (mapState == null) return;
 
-        var attachment = ExplorerMapMod.getOrCreate(mapState);
-        if (!attachment.hasExpansion(payload.direction())) {
-            attachment.addExpansion(new ExpansionRecord(
+        int mapId = MapIdentity.rawIdOf(offHand);
+        if (mapId < 0) return;
+
+        var mapEntry = ClientMapCache.getOrCreate(mapState, mapId);
+        if (!mapEntry.hasExpansion(payload.direction())) {
+            mapEntry.addExpansion(new ExpansionRecord(
                     payload.direction(), payload.mapId(), payload.highDetail()));
-            ExplorerMapMod.LOGGER.info("[ExplorerMap] Expansion granted: {} → map #{} (HD:{})",
+            ExplorerMapMod.LOGGER.info("[ExplorerMap] Expansion granted: {} -> map #{} (HD:{})",
                     payload.direction(), payload.mapId(), payload.highDetail());
         }
     }

@@ -1,7 +1,9 @@
 package com.explorermap.mod.gui;
 
 import com.explorermap.mod.ExplorerMapMod;
-import com.explorermap.mod.attachment.MapDiscoveryAttachment;
+import com.explorermap.mod.data.ClientMapCache;
+import com.explorermap.mod.data.MapEntryData;
+import com.explorermap.mod.data.MapIdentity;
 import com.explorermap.mod.expansion.ExpansionHandler;
 import com.explorermap.mod.expansion.ExpansionRecord;
 import com.explorermap.mod.expansion.MultiTileCanvas;
@@ -17,32 +19,31 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.item.FilledMapItem;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.map.MapState;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
-import net.minecraft.world.storage.MapState;
 
 /**
  * Full-scale map GUI.
  *
  * Features:
  *   - Discovered-pixel-only rendering (fog on unseen areas)
- *   - Mouse scroll zoom (0.5×–4×)
+ *   - Mouse scroll zoom (0.5x-4x)
  *   - Left-click drag pan
- *   - Expansion buttons → real C2S packet
- *   - + Waypoint → WaypointEditScreen
- *   - Compass rose
- *   - Discovery progress bar
- *   - Player arrow
+ *   - Expansion buttons -> real C2S packet
+ *   - + Waypoint -> WaypointEditScreen
+ *   - Right-click a waypoint -> Edit/Delete context menu
+ *   - Compass rose, discovery progress bar, player arrow
  */
 @Environment(EnvType.CLIENT)
 public class FullMapScreen extends Screen {
 
     private static final int BASE_CANVAS = 512;
 
+    private int mapId = -1;
     private MapState mapState;
-    private MapDiscoveryAttachment attachment;
+    private MapEntryData mapEntry;
 
     float zoom = 1.0f;
     float panX = 0f, panY = 0f;
@@ -51,7 +52,6 @@ public class FullMapScreen extends Screen {
     private float panStartX, panStartY;
     boolean hdMode = false;
 
-    // Waypoint right-click context menu state
     private Waypoint contextMenuWaypoint;
     private int contextMenuX, contextMenuY;
 
@@ -59,33 +59,29 @@ public class FullMapScreen extends Screen {
         super(Text.translatable("screen.explorermap.full_map"));
     }
 
-    // ── Layout ────────────────────────────────────────────────────────────
-
+    // Layout
     private int canvasSize() { return Math.min(BASE_CANVAS, Math.min(this.width, this.height) - 80); }
     private int canvasX()    { return (this.width  - canvasSize()) / 2; }
     private int canvasY()    { return (this.height - canvasSize()) / 2; }
-
-    // ── Init ──────────────────────────────────────────────────────────────
 
     @Override
     protected void init() {
         super.init();
         resolveMap();
 
-        int cx      = canvasX();
-        int toolY   = canvasY() - 24;
-        int size    = canvasSize();
+        int cx    = canvasX();
+        int toolY = canvasY() - 24;
+        int size  = canvasSize();
 
-        // Expansion buttons — disabled if already expanded or lacking resources
         boolean hasResources = client.player != null && ExpansionHandler.canExpand(client.player, hdMode);
         for (ExpansionRecord.Direction dir : ExpansionRecord.Direction.values()) {
             boolean done   = client.player != null && ExpansionHandler.alreadyExpanded(client.player, dir);
             boolean active = hasResources && !done;
             String label = switch (dir) {
-                case NORTH -> done ? "✓ N" : "▲ N";
-                case SOUTH -> done ? "✓ S" : "▼ S";
-                case WEST  -> done ? "✓ W" : "◄ W";
-                case EAST  -> done ? "✓ E" : "► E";
+                case NORTH -> done ? "OK N" : "^ N";
+                case SOUTH -> done ? "OK S" : "v S";
+                case WEST  -> done ? "OK W" : "< W";
+                case EAST  -> done ? "OK E" : "> E";
             };
             int offset = switch (dir) {
                 case NORTH -> 0; case SOUTH -> 50; case WEST -> 100; case EAST -> 150;
@@ -93,16 +89,13 @@ public class FullMapScreen extends Screen {
             var btn = ButtonWidget.builder(Text.literal(label),
                     b -> { if (!done) expand(dir, hdMode); })
                     .dimensions(cx + offset, toolY, 46, 20).build();
-            btn.active = active || done; // done buttons are visible but inert
+            btn.active = active || done;
             addDrawableChild(btn);
         }
 
-        // HD toggle: cycles between Standard and HD expansion mode
-        // HD costs Paper + Ink Sac + Compass but enables waypoints in that tile
         addDrawableChild(ButtonWidget.builder(
                 Text.literal(hdMode ? "[HD]" : " HD "),
                 btn -> {
-                    // Create a new screen with the toggled HD state
                     FullMapScreen next = new FullMapScreen();
                     next.hdMode = !this.hdMode;
                     next.zoom   = this.zoom;
@@ -112,21 +105,16 @@ public class FullMapScreen extends Screen {
                 }
         ).dimensions(cx + 200, toolY, 32, 20).build());
 
-        // Zoom
         addDrawableChild(ButtonWidget.builder(Text.literal("+"),   btn -> adjustZoom(+0.25f)).dimensions(cx + 238, toolY, 20, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("−"),   btn -> adjustZoom(-0.25f)).dimensions(cx + 260, toolY, 20, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("-"),   btn -> adjustZoom(-0.25f)).dimensions(cx + 260, toolY, 20, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("1:1"), btn -> { zoom = 1f; panX = 0; panY = 0; }).dimensions(cx + 282, toolY, 30, 20).build());
 
-        // Waypoint
         addDrawableChild(ButtonWidget.builder(Text.literal("+ Waypoint"),
                 btn -> client.setScreen(new WaypointEditScreen(this))).dimensions(cx + 318, toolY, 90, 20).build());
 
-        // Close
-        addDrawableChild(ButtonWidget.builder(Text.literal("✕"),
+        addDrawableChild(ButtonWidget.builder(Text.literal("X"),
                 btn -> this.close()).dimensions(cx + size - 20, toolY, 20, 20).build());
     }
-
-    // ── Render ────────────────────────────────────────────────────────────
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
@@ -137,10 +125,9 @@ public class FullMapScreen extends Screen {
         int cy   = canvasY();
         int size = canvasSize();
 
-        // Canvas border
         context.fill(cx - 2, cy - 2, cx + size + 2, cy + size + 2, 0xFF444444);
 
-        if (mapState == null || attachment == null) {
+        if (mapState == null || mapEntry == null) {
             context.drawCenteredTextWithShadow(this.textRenderer,
                     Text.translatable("explorermap.hud.no_map"),
                     this.width / 2, this.height / 2, 0xFFAAAAAA);
@@ -151,15 +138,13 @@ public class FullMapScreen extends Screen {
         context.enableScissor(cx, cy, cx + size, cy + size);
 
         if (client.player != null) {
-            // Build tile grid and render via TileRenderer
-            TileGrid grid = TileGrid.build(mapState, attachment, client.world);
+            TileGrid grid = TileGrid.build(mapId, mapState, mapEntry, client.world);
             TileRenderer.renderFullMap(context, grid, mapState,
                     cx + size / 2, cy + size / 2,
                     zoom, panX, panY,
                     cx, cy, cx + size, cy + size,
                     client.player.getX(), client.player.getZ(), client.player.getYaw());
 
-            // Waypoints rendered on top using MultiTileCanvas for coords
             MultiTileCanvas canvas = MultiTileCanvas.from(grid, mapState);
             int originX = canvas.defaultScreenOriginX(cx + size / 2, zoom, panX);
             int originY = canvas.defaultScreenOriginY(cy + size / 2, zoom, panY);
@@ -171,7 +156,6 @@ public class FullMapScreen extends Screen {
         renderCompass(context, cx + size - 26, cy + 6);
         renderProgressBar(context, cx, cy, size);
 
-        // HD mode status line just below the toolbar
         if (hdMode) {
             String hdLabel = Text.translatable("explorermap.expansion.hd_cost").getString();
             int labelW = this.textRenderer.getWidth(hdLabel);
@@ -179,7 +163,6 @@ public class FullMapScreen extends Screen {
                     hdLabel, cx + size / 2 - labelW / 2, cy - 10, 0xFFFFCC44);
         }
 
-        // Expansion failure toast (red flash near the direction that failed)
         var failedDir = ExpansionFeedback.getActiveFailureDirection();
         if (failedDir != null) {
             String msg = ExpansionFeedback.getActiveFailureMessage();
@@ -193,17 +176,12 @@ public class FullMapScreen extends Screen {
         super.render(context, mouseX, mouseY, delta);
     }
 
-    // ── Map pixels ────────────────────────────────────────────────────────
-
-    // ── Waypoints ─────────────────────────────────────────────────────────
-
     private void renderWaypoints(DrawContext ctx, MultiTileCanvas canvas,
                                   int originX, int originY, float zoom) {
-        if (attachment == null) return;
-        // Scale icon size with zoom, clamped to [6, 16]
-        int iconSize = Math.min(16, Math.max(6, (int)(WaypointIconRenderer.MAP_ICON_SIZE * zoom)));
-        boolean showLabels = zoom >= 0.75f; // hide labels when very zoomed out
-        for (Waypoint wp : attachment.getWaypoints()) {
+        if (mapEntry == null) return;
+        int iconSize = Math.min(16, Math.max(6, (int) (WaypointIconRenderer.MAP_ICON_SIZE * zoom)));
+        boolean showLabels = zoom >= 0.75f;
+        for (Waypoint wp : mapEntry.getWaypoints()) {
             int cpx = canvas.worldToCanvasX(wp.worldX());
             int cpz = canvas.worldToCanvasZ(wp.worldZ());
             int sx  = originX + Math.round(cpx * zoom);
@@ -212,26 +190,21 @@ public class FullMapScreen extends Screen {
         }
     }
 
-    // ── Compass rose ──────────────────────────────────────────────────────
-
     private void renderCompass(DrawContext ctx, int x, int y) {
         ctx.drawTextWithShadow(this.textRenderer, "N", x + 5, y,      0xFFFF5555);
         ctx.drawTextWithShadow(this.textRenderer, "S", x + 5, y + 20, 0xFFAAAAAA);
         ctx.drawTextWithShadow(this.textRenderer, "W", x,     y + 10, 0xFFAAAAAA);
         ctx.drawTextWithShadow(this.textRenderer, "E", x + 12,y + 10, 0xFFAAAAAA);
-        // Centre dot
         ctx.fill(x + 7, y + 11, x + 9, y + 13, 0xFF888888);
     }
 
-    // ── Progress bar ──────────────────────────────────────────────────────
-
     private void renderProgressBar(DrawContext ctx, int cx, int cy, int size) {
-        float frac = attachment.discoveryFraction();
-        ctx.fill(cx,                      cy + size + 4, cx + size,                  cy + size + 10, 0xFF222222);
-        ctx.fill(cx,                      cy + size + 4, cx + (int)(size * frac),    cy + size + 10, 0xFF44AA44);
+        float frac = mapEntry.discoveryFraction();
+        ctx.fill(cx, cy + size + 4, cx + size,               cy + size + 10, 0xFF222222);
+        ctx.fill(cx, cy + size + 4, cx + (int) (size * frac), cy + size + 10, 0xFF44AA44);
         ctx.drawTextWithShadow(this.textRenderer,
                 String.format(Text.translatable("explorermap.hud.explored").getString(), frac * 100f),
-                        cx + 2, cy + size + 13, 0xFF888888);
+                cx + 2, cy + size + 13, 0xFF888888);
 
         if (client.player != null) {
             String pos = String.format("X %.0f  Z %.0f", client.player.getX(), client.player.getZ());
@@ -239,8 +212,6 @@ public class FullMapScreen extends Screen {
                     cx + size - this.textRenderer.getWidth(pos) - 2, cy + size + 13, 0xFF888888);
         }
     }
-
-    // ── Mouse ─────────────────────────────────────────────────────────────
 
     @Override
     public boolean mouseScrolled(double mx, double my, double hAmt, double vAmt) {
@@ -250,7 +221,7 @@ public class FullMapScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
-        if (button == 1) { // right-click: check for waypoint hit
+        if (button == 1) {
             Waypoint hit = findWaypointNear(mx, my);
             if (hit != null) {
                 contextMenuWaypoint = hit;
@@ -263,25 +234,23 @@ public class FullMapScreen extends Screen {
             }
         }
         if (button == 0) {
-            // Left-click dismisses any open context menu, then starts a drag
             closeContextMenu();
             dragging = true; dragStartX = mx; dragStartY = my; panStartX = panX; panStartY = panY;
         }
         return super.mouseClicked(mx, my, button);
     }
 
-    /** Finds a waypoint within a small screen-pixel radius of the click, or null. */
     private Waypoint findWaypointNear(double mx, double my) {
-        if (attachment == null || mapState == null || client == null || client.world == null) return null;
+        if (mapEntry == null || mapState == null || client == null || client.world == null) return null;
 
-        TileGrid grid = TileGrid.build(mapState, attachment, client.world);
+        TileGrid grid = TileGrid.build(mapId, mapState, mapEntry, client.world);
         MultiTileCanvas canvas = MultiTileCanvas.from(grid, mapState);
         int cx = canvasX(), cy = canvasY(), size = canvasSize();
         int originX = canvas.defaultScreenOriginX(cx + size / 2, zoom, panX);
         int originY = canvas.defaultScreenOriginY(cy + size / 2, zoom, panY);
 
         final int HIT_RADIUS = 8;
-        for (Waypoint wp : attachment.getWaypoints()) {
+        for (Waypoint wp : mapEntry.getWaypoints()) {
             int cpx = canvas.worldToCanvasX(wp.worldX());
             int cpz = canvas.worldToCanvasZ(wp.worldZ());
             int sx  = originX + Math.round(cpx * zoom);
@@ -293,9 +262,6 @@ public class FullMapScreen extends Screen {
     }
 
     private void rebuildContextMenuButtons() {
-        // Remove any previous context menu buttons before adding new ones
-        // (identified by a marker interface would be cleaner, but a simple
-        // rebuild via clearAndInit is acceptable here since it's infrequent)
         this.clearChildren();
         this.init();
 
@@ -320,18 +286,13 @@ public class FullMapScreen extends Screen {
     }
 
     private void deleteWaypoint(Waypoint wp) {
-        if (client == null || client.player == null || attachment == null) return;
+        if (client == null || client.player == null || mapEntry == null || mapId < 0) return;
 
-        // Optimistic local removal
-        attachment.removeWaypoint(wp.name());
+        mapEntry.removeWaypoint(wp.name());
 
-        // Persist on server
         ItemStack offHand = client.player.getStackInHand(Hand.OFF_HAND);
         if (ExplorerMapMod.isFilledMap(offHand)) {
-            Integer mapId = FilledMapItem.getMapId(offHand);
-            if (mapId != null) {
-                ClientPlayNetworking.send(new DeleteWaypointPayload(mapId, wp.name()));
-            }
+            ClientPlayNetworking.send(new DeleteWaypointPayload(mapId, wp.name()));
         }
     }
 
@@ -345,7 +306,7 @@ public class FullMapScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mx, double my, int button, double dx, double dy) {
-        if (dragging && button == 0) { panX = panStartX + (float)(mx - dragStartX); panY = panStartY + (float)(my - dragStartY); }
+        if (dragging && button == 0) { panX = panStartX + (float) (mx - dragStartX); panY = panStartY + (float) (my - dragStartY); }
         return super.mouseDragged(mx, my, button, dx, dy);
     }
 
@@ -355,8 +316,6 @@ public class FullMapScreen extends Screen {
         return super.mouseReleased(mx, my, button);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
-
     private void adjustZoom(float delta) { zoom = Math.clamp(zoom + delta, 0.5f, 4.0f); }
 
     private void expand(ExpansionRecord.Direction dir, boolean highDetail) {
@@ -364,11 +323,16 @@ public class FullMapScreen extends Screen {
     }
 
     private void resolveMap() {
-        if (client == null || client.player == null || client.world == null) { mapState = null; attachment = null; return; }
+        if (client == null || client.player == null || client.world == null) {
+            mapId = -1; mapState = null; mapEntry = null; return;
+        }
         ItemStack off = client.player.getStackInHand(Hand.OFF_HAND);
-        if (!ExplorerMapMod.isFilledMap(off)) { mapState = null; attachment = null; return; }
-        mapState   = FilledMapItem.getMapState(off, client.world);
-        attachment = mapState != null ? ExplorerMapMod.getOrCreate(mapState) : null;
+        if (!ExplorerMapMod.isFilledMap(off)) {
+            mapId = -1; mapState = null; mapEntry = null; return;
+        }
+        mapId    = MapIdentity.rawIdOf(off);
+        mapState = MapIdentity.stateOf(off, client.world);
+        mapEntry = (mapState != null && mapId >= 0) ? ClientMapCache.getOrCreate(mapState, mapId) : null;
     }
 
     @Override public boolean shouldPause() { return false; }

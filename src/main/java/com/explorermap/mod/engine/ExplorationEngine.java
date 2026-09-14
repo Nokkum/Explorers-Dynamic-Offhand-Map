@@ -1,8 +1,10 @@
 package com.explorermap.mod.engine;
 
 import com.explorermap.mod.ExplorerMapMod;
-import com.explorermap.mod.attachment.MapDiscoveryAttachment;
 import com.explorermap.mod.config.ExplorerMapConfig;
+import com.explorermap.mod.data.ClientMapCache;
+import com.explorermap.mod.data.MapEntryData;
+import com.explorermap.mod.data.MapIdentity;
 import com.explorermap.mod.dimension.DimensionMapTracker;
 import com.explorermap.mod.network.SyncDiscoveryPayload;
 import net.fabricmc.api.EnvType;
@@ -10,12 +12,11 @@ import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.FilledMapItem;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.map.MapState;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.storage.MapState;
 
 /**
  * Camera-based fog-of-discovery engine.
@@ -26,16 +27,24 @@ import net.minecraft.world.storage.MapState;
  * 2. Throttle: only run every cfg.discoveryTickInterval ticks to reduce CPU cost.
  * 3. Read player camera yaw/pitch and derive the horizontal FOV from
  *    the game's configured FOV setting.
- * 4. Cast RAY_COUNT rays fanning across the visible arc. For each ray,
+ * 4. Cast rayCount rays fanning across the visible arc. For each ray,
  *    project to the map's XZ plane and compute the pixel coordinate.
- * 5. Mark those pixels as discovered in the MapDiscoveryAttachment.
+ * 5. Mark those pixels as discovered in the client's local MapEntryData
+ *    mirror (ClientMapCache), then periodically upload the bitmask so the
+ *    server can merge it with other players' progress on the same map.
  *
- * Performance notes
- * ─────────────────
- * - Throttled to every 3 ticks (~5 updates/sec) by default.
- * - Ray count defaults to 32 horizontal × 3 vertical = 96 rays/update.
- * - All math is integer-friendly after the initial trig.
- * - The bitmask write is synchronized in MapDiscoveryAttachment.
+ * No coordinate conversion between dimensions
+ * ────────────────────────────────────────────
+ * An earlier revision applied a ×8 multiplier to player coordinates in the
+ * Nether, based on a mistaken belief that vanilla stores all map centers in
+ * Overworld-space coordinates. That is not how vanilla maps work: a map
+ * created in the Nether stores its center in Nether block coordinates,
+ * exactly like a map created in the Overworld stores Overworld coordinates —
+ * each dimension has its own independent coordinate space. Since
+ * DimensionMapTracker's relevance check already guarantees we only reach
+ * this code when the held map's own dimension matches the player's current
+ * dimension, player.getX()/getZ() are already in the correct coordinate
+ * space for that map with no conversion needed.
  */
 @Environment(EnvType.CLIENT)
 public class ExplorationEngine {
@@ -57,62 +66,54 @@ public class ExplorationEngine {
         ItemStack offHand = player.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) return;
 
-        // ── 2. Resolve MapState and attachment ───────────────────────────
-        Integer mapId = FilledMapItem.getMapId(offHand);
-        if (mapId == null) return;
+        // ── 2. Resolve map identity and state ─────────────────────────────
+        int mapId = MapIdentity.rawIdOf(offHand);
+        if (mapId < 0) return;
 
-        MapState mapState = FilledMapItem.getMapState(offHand, client.world);
+        MapState mapState = MapIdentity.stateOf(offHand, client.world);
         if (mapState == null) return;
 
         // ── Dimension gate ─────────────────────────────────────────────────
-        // Don't mark pixels if this map belongs to a different dimension.
         if (!DimensionMapTracker.isMapRelevantForCurrentDimension(player, mapState)) return;
 
-        MapDiscoveryAttachment attachment = ExplorerMapMod.getOrCreate(mapState);
+        MapEntryData mapEntry = ClientMapCache.getOrCreate(mapState, mapId);
 
         // ── 3. Camera parameters ──────────────────────────────────────────
         float yawDeg   = player.getYaw();
         float pitchDeg = player.getPitch();
         float fovDeg   = (float) client.options.getFov().getValue();
 
-        // Coordinate multiplier: in the Nether, player coords are 1/8 of Overworld.
-        // Map centers are always stored in Overworld space, so we scale up.
-        double coordMult = DimensionMapTracker.dimensionCoordMultiplier(player);
-
         // ── 4. Cast rays / mark all ───────────────────────────────────────
         if (cfg.fogOfDiscovery) {
-            castRays(player, mapState, attachment, yawDeg, pitchDeg, fovDeg, cfg.rayCount, coordMult);
-        } else if (attachment.discoveryFraction() < 1f) {
-            // Fog disabled: reveal every pixel within the map bounds instantly.
-            // Skip once fully discovered so we don't re-scan 16 384 pixels
-            // (and take a lock per pixel) forever on every throttle tick.
-            markAllPixels(attachment);
+            castRays(player, mapState, mapEntry, yawDeg, pitchDeg, fovDeg, cfg.rayCount);
+        } else if (mapEntry.discoveryFraction() < 1f) {
+            markAllPixels(mapEntry);
         }
 
         // ── 5. Multiplayer sync (throttled) ───────────────────────────────
         // Upload this client's bitmask to the server every ~3 seconds if new
         // pixels were discovered. The server OR-merges contributions from all
         // players holding the same map and broadcasts the result back.
-        if (SyncDiscoveryPayload.shouldUpload(attachment.getDiscoveryGeneration())) {
+        if (SyncDiscoveryPayload.shouldUpload(mapEntry.getDiscoveryGeneration())) {
             ClientPlayNetworking.send(
-                    new SyncDiscoveryPayload.Upload(mapId, attachment.getDiscoveryLongs()));
+                    new SyncDiscoveryPayload.Upload(mapId, mapEntry.getDiscoveredPixelsCopy()));
         }
     }
 
     /** Reveals every pixel in the 128×128 grid instantly (fog disabled mode). */
-    private static void markAllPixels(MapDiscoveryAttachment attachment) {
+    private static void markAllPixels(MapEntryData mapEntry) {
         for (int row = 0; row < 128; row++) {
             for (int col = 0; col < 128; col++) {
-                attachment.discover(col, row);
+                mapEntry.discover(col, row);
             }
         }
     }
 
     private static void castRays(ClientPlayerEntity player,
                                   MapState mapState,
-                                  MapDiscoveryAttachment attachment,
+                                  MapEntryData mapEntry,
                                   float yawDeg, float pitchDeg, float fovDeg,
-                                  int hRays, double coordMult) {
+                                  int hRays) {
 
         Vec3d origin = player.getCameraPosVec(1.0f);
         float halfFov = fovDeg * 0.5f;
@@ -127,22 +128,15 @@ public class ExplorationEngine {
                 float yaw = yawDeg - halfFov + t * fovDeg;
 
                 Vec3d dir = directionFromAngles(yaw, pitch);
-                markRayOnMap(origin, dir, mapState, attachment, coordMult);
+                markRayOnMap(origin, dir, mapState, mapEntry);
             }
         }
     }
 
-    /**
-     * Steps a ray forward in world space and marks map pixels as discovered.
-     *
-     * @param coordMult  1.0 for Overworld/End, 8.0 for Nether.
-     *                   Scales player world coords up to Overworld space
-     *                   so they match map centres (always stored as OW coords).
-     */
+    /** Steps a ray forward in world space and marks map pixels as discovered. */
     private static void markRayOnMap(Vec3d origin, Vec3d dir,
                                       MapState mapState,
-                                      MapDiscoveryAttachment attachment,
-                                      double coordMult) {
+                                      MapEntryData mapEntry) {
         int scale      = 1 << mapState.scale;
         int mapCenterX = mapState.centerX;
         int mapCenterZ = mapState.centerZ;
@@ -155,12 +149,12 @@ public class ExplorationEngine {
             x += dir.x * stepSize;
             z += dir.z * stepSize;
 
-            int col = worldToPixel(x * coordMult, mapCenterX, scale);
-            int row = worldToPixel(z * coordMult, mapCenterZ, scale);
+            int col = worldToPixel(x, mapCenterX, scale);
+            int row = worldToPixel(z, mapCenterZ, scale);
 
             if (col < 0 || col >= 128 || row < 0 || row >= 128) break;
 
-            attachment.discover(col, row);
+            mapEntry.discover(col, row);
         }
     }
 
@@ -184,13 +178,8 @@ public class ExplorationEngine {
     /**
      * Maps a world coordinate to a map pixel index [0, 127].
      * Returns -1 if outside the map bounds.
-     *
-     * @param world       world coordinate (X or Z)
-     * @param mapCenter   mapState.centerX / centerZ
-     * @param scale       blocks per pixel (1 << mapState.scale)
      */
     private static int worldToPixel(double world, int mapCenter, int scale) {
-        // Map covers 128 * scale blocks, centered at mapCenter
         int halfBlocks = 64 * scale;
         double relative = world - (mapCenter - halfBlocks);
         int pixel = (int) (relative / scale);

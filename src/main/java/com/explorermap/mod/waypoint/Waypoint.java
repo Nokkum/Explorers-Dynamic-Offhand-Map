@@ -6,7 +6,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 /**
  * A named positional marker placed by the player on a discovered area of the map.
  *
- * Waypoints are stored per-MapState in MapDiscoveryAttachment and are only
+ * Waypoints are stored per-map in MapEntryData (see the data package) and are only
  * rendered on the mini-map and full-scale map if the pixel at their position
  * has been discovered.
  *

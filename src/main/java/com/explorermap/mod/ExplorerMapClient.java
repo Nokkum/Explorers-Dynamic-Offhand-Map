@@ -1,8 +1,8 @@
 package com.explorermap.mod;
 
 import com.explorermap.mod.config.ExplorerMapConfig;
+import com.explorermap.mod.data.ClientMapCache;
 import com.explorermap.mod.engine.ExplorationEngine;
-import com.explorermap.mod.expansion.TileGrid;
 import com.explorermap.mod.gui.ExpansionFeedback;
 import com.explorermap.mod.gui.FullMapScreen;
 import com.explorermap.mod.hud.MinimapHud;
@@ -75,10 +75,12 @@ public class ExplorerMapClient implements ClientModInitializer {
             }
         });
 
-        // Clear GPU texture cache on disconnect so stale textures don't survive into a new session
+        // Clear client-side caches on disconnect so stale data / GPU textures
+        // don't survive into a new session; a fresh copy re-syncs from the
+        // server on the next join anyway.
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             TileTextureCache.getInstance().clearAll();
-            TileGrid.clearMapIdCache();
+            ClientMapCache.clearAll();
             SyncDiscoveryPayload.resetUploadState();
             ExpansionFeedback.clear();
         });

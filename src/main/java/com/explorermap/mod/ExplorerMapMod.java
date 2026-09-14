@@ -1,6 +1,5 @@
 package com.explorermap.mod;
 
-import com.explorermap.mod.attachment.MapDiscoveryAttachment;
 import com.explorermap.mod.network.DeleteWaypointPayload;
 import com.explorermap.mod.network.ExpansionFailedPayload;
 import com.explorermap.mod.network.GrantExpansionPayload;
@@ -8,38 +7,30 @@ import com.explorermap.mod.network.RequestExpansionPayload;
 import com.explorermap.mod.network.SaveWaypointPayload;
 import com.explorermap.mod.network.SyncDiscoveryPayload;
 import com.explorermap.mod.network.SyncWaypointsPayload;
-import com.explorermap.mod.registry.ExplorerMapRegistry;
 import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.attachment.v1.AttachmentRegistry;
-import net.fabricmc.fabric.api.attachment.v1.AttachmentType;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.item.FilledMapItem;
 import net.minecraft.item.ItemStack;
-import net.minecraft.world.storage.MapState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Common (server + client) entrypoint.
  *
- * Responsibilities:
- *  - Register the MapDiscoveryAttachment type on MapState
- *  - Register custom advancements / game-events (future)
+ * Architecture note
+ * ─────────────────
+ * Per-map exploration data (fog-of-discovery bitmask, expansions, waypoints)
+ * is stored in com.explorermap.mod.data.ExplorerMapSavedData, a proper
+ * mod-owned PersistentState retrieved via ExplorerMapSavedData.get(server).
+ * An earlier revision of this mod tried to attach that data directly to
+ * MapState using Fabric's Data Attachment API — an API whose AttachmentTarget
+ * is only implemented on Entity, BlockEntity, ServerWorld, and Chunk, never
+ * on PersistentState. That approach could not compile and has been removed.
  */
 public class ExplorerMapMod implements ModInitializer {
 
     public static final String MOD_ID = "explorermap";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
-
-    /**
-     * Per-MapState attachment storing the fog-of-discovery bitmask,
-     * waypoints, and expansion tile records.
-     */
-    public static final AttachmentType<MapDiscoveryAttachment> MAP_DISCOVERY =
-            AttachmentRegistry.createPersistent(
-                    ExplorerMapRegistry.id("map_discovery"),
-                    MapDiscoveryAttachment.CODEC
-            );
 
     @Override
     public void onInitialize() {
@@ -61,19 +52,10 @@ public class ExplorerMapMod implements ModInitializer {
         LOGGER.info("[ExplorerMap] Common init complete.");
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
+    // ── Helpers ──────────────────────────────────────────────────────────
 
-    /**
-     * Returns true if the given ItemStack is a filled map.
-     */
+    /** Returns true if the given ItemStack is a filled map. */
     public static boolean isFilledMap(ItemStack stack) {
         return stack.getItem() instanceof FilledMapItem;
-    }
-
-    /**
-     * Gets or creates the MapDiscoveryAttachment for a given MapState.
-     */
-    public static MapDiscoveryAttachment getOrCreate(MapState state) {
-        return state.getAttachedOrSet(MAP_DISCOVERY, new MapDiscoveryAttachment());
     }
 }

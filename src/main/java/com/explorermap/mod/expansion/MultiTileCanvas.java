@@ -1,6 +1,6 @@
 package com.explorermap.mod.expansion;
 
-import net.minecraft.world.storage.MapState;
+import net.minecraft.item.map.MapState;
 
 /**
  * Coordinate model for a stitched multi-tile canvas.

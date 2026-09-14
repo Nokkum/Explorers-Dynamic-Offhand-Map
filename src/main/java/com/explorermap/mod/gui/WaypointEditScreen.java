@@ -1,6 +1,8 @@
 package com.explorermap.mod.gui;
 
 import com.explorermap.mod.ExplorerMapMod;
+import com.explorermap.mod.data.ClientMapCache;
+import com.explorermap.mod.data.MapIdentity;
 import com.explorermap.mod.hud.WaypointIconRenderer;
 import com.explorermap.mod.registry.ExplorerMapRegistry;
 import com.explorermap.mod.waypoint.Waypoint;
@@ -10,7 +12,6 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.item.FilledMapItem;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
@@ -267,16 +268,16 @@ public class WaypointEditScreen extends Screen {
             return;
         }
 
-        Integer mapId = FilledMapItem.getMapId(offHand);
-        if (mapId == null) { client.setScreen(parent); return; }
+        int mapId = MapIdentity.rawIdOf(offHand);
+        if (mapId < 0) { client.setScreen(parent); return; }
 
         // Optimistic local update so the HUD reflects the change immediately
         // (server will echo back authoritative state via SyncWaypointsPayload)
-        var mapState = FilledMapItem.getMapState(offHand, client.world);
+        var mapState = MapIdentity.stateOf(offHand, client.world);
         if (mapState != null) {
-            var attachment = ExplorerMapMod.getOrCreate(mapState);
-            if (editingWaypoint != null) attachment.removeWaypoint(editingWaypoint.name());
-            attachment.addWaypoint(wp);
+            var mapEntry = ClientMapCache.getOrCreate(mapState, mapId);
+            if (editingWaypoint != null) mapEntry.removeWaypoint(editingWaypoint.name());
+            mapEntry.addWaypoint(wp);
         }
 
         // Persist on server
