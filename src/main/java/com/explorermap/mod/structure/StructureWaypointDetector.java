@@ -18,40 +18,12 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Automatically places waypoints when a player's fog-of-discovery reveals
- * a structure for the first time.
- *
- * How it works
- * ────────────
- * Called from SyncDiscoveryPayload.Upload.handleOnServer() after a
- * successful merge, so it runs at most once per upload interval (~3 seconds)
- * and only when new pixels were actually discovered. It checks whether any
- * newly-discovered pixels overlap a vanilla structure's bounding box, and if
- * so and no waypoint already exists nearby, adds one.
- *
- * Dimension resolution
- * ─────────────────────
- * An earlier revision always looked up structures in the Overworld,
- * regardless of which dimension the map actually belonged to — a map held
- * in the Nether would silently check Overworld chunks at the same numeric
- * coordinates, which is meaningless. MapState carries its own `dimension`
- * field; this now resolves the correct ServerWorld from that directly.
- *
- * All mutations to waypoint data go through ExplorerMapSavedData's wrapper
- * methods (never by touching a MapEntryData object directly) so that every
- * change is correctly marked dirty and actually gets persisted to disk.
- */
 public final class StructureWaypointDetector {
 
     private static final int DEDUP_RADIUS = 64;
 
     private StructureWaypointDetector() {}
 
-    /**
-     * Called after a successful discovery merge on the server. Scans
-     * structures under newly-discovered pixels and auto-places waypoints.
-     */
     public static void checkAndPlace(MinecraftServer server,
                                       ServerPlayerEntity player,
                                       int mapId,
@@ -99,8 +71,6 @@ public final class StructureWaypointDetector {
                 double structX = (bb.getMinX() + bb.getMaxX()) / 2.0;
                 double structZ = (bb.getMinZ() + bb.getMaxZ()) / 2.0;
 
-                // Re-fetch the entry fresh each time since savedData.addWaypoint
-                // may have just mutated it in the previous loop iteration.
                 if (hasDuplicateWaypoint(savedData.getOrCreate(world, mapId), structX, structZ)) continue;
 
                 String iconId = iconForStructure(world, se.getKey());
@@ -117,15 +87,10 @@ public final class StructureWaypointDetector {
             }
         }
 
-        // Broadcast once per call, not once per structure, to avoid sending
-        // redundant full waypoint-list syncs when several structures are
-        // revealed in the same discovery batch.
         if (placedAny) {
             SyncWaypointsPayload.broadcastTo(server, mapId);
         }
     }
-
-    // ── Helpers ──────────────────────────────────────────────────────────
 
     private static boolean hasDuplicateWaypoint(com.explorermap.mod.data.MapEntryData entry,
                                                  double wx, double wz) {
@@ -136,8 +101,6 @@ public final class StructureWaypointDetector {
         }
         return false;
     }
-
-    // ── Structure -> icon/name/color mapping ────────────────────────────
 
     private static String iconForStructure(ServerWorld world, Structure structure) {
         String type = structureTypeName(world, structure);

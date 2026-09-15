@@ -13,27 +13,6 @@ import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-/**
- * C2S: client saves a new (or updated) waypoint for a specific map.
- *
- * Server-side validation
- * ───────────────────────
- * - The map must actually exist in the requesting player's dimension.
- * - Waypoint coordinates are rejected if NaN or infinite. A naive range
- *   check such as `Math.abs(x - center) > maxDist` does NOT catch NaN,
- *   since every comparison against NaN in Java evaluates to false — NaN
- *   would silently pass an unguarded range check and get persisted.
- * - Coordinates must be within a generous radius of the map's center to
- *   prevent a waypoint being planted arbitrarily far away.
- * - Name length and icon/color are bounded by Waypoint's own codec limits.
- *
- * "Replace" semantics: a waypoint with the same name is replaced.
- *
- * On success, the server pushes the updated list to every player currently
- * holding this map (SyncWaypointsPayload.broadcastTo), not just the sender —
- * otherwise a second player holding the same map would not see the change
- * until their next relog.
- */
 public record SaveWaypointPayload(int mapId, Waypoint waypoint) implements CustomPayload {
 
     public static final CustomPayload.Id<SaveWaypointPayload> ID =
@@ -68,8 +47,6 @@ public record SaveWaypointPayload(int mapId, Waypoint waypoint) implements Custo
         double wx = payload.waypoint().worldX();
         double wz = payload.waypoint().worldZ();
 
-        // Reject NaN/Infinity explicitly — a bare range check would let NaN
-        // through silently, since every comparison against NaN is false.
         if (!Double.isFinite(wx) || !Double.isFinite(wz)) {
             ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: non-finite coordinates rejected from {}",
                     player.getName().getString());
@@ -77,7 +54,7 @@ public record SaveWaypointPayload(int mapId, Waypoint waypoint) implements Custo
         }
 
         int scale   = 1 << mapState.scale;
-        int maxDist = 256 * scale; // 2 tile radii
+        int maxDist = 256 * scale;
         if (Math.abs(wx - mapState.centerX) > maxDist || Math.abs(wz - mapState.centerZ) > maxDist) {
             ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: coordinates out of range, rejected");
             return;

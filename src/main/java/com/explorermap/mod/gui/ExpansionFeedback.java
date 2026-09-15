@@ -6,17 +6,10 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.text.Text;
 
-/**
- * Holds the most recent expansion failure so FullMapScreen can render a
- * brief red flash / toast message near the direction button that failed.
- *
- * The message expires after DISPLAY_TICKS so it doesn't linger forever if
- * the player closes and reopens the map screen.
- */
 @Environment(EnvType.CLIENT)
 public final class ExpansionFeedback {
 
-    private static final int DISPLAY_TICKS = 60; // ~3 seconds at 20 TPS
+    private static final int DISPLAY_TICKS = 60;
 
     private static ExpansionRecord.Direction failedDirection;
     private static ExpansionFailedPayload.Reason failedReason;
@@ -28,16 +21,14 @@ public final class ExpansionFeedback {
                                       ExpansionFailedPayload.Reason reason) {
         failedDirection  = direction;
         failedReason     = reason;
-        expiresAtMillis  = System.currentTimeMillis() + (DISPLAY_TICKS * 50L); // 50ms/tick
+        expiresAtMillis  = System.currentTimeMillis() + (DISPLAY_TICKS * 50L);
     }
 
-    /** Returns the direction that most recently failed, or null if no active feedback. */
     public static ExpansionRecord.Direction getActiveFailureDirection() {
         if (System.currentTimeMillis() > expiresAtMillis) return null;
         return failedDirection;
     }
 
-    /** Human-readable reason string for the active failure, or null. */
     public static String getActiveFailureMessage() {
         if (getActiveFailureDirection() == null) return null;
         String key = switch (failedReason) {

@@ -18,13 +18,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.map.MapState;
 import net.minecraft.util.Hand;
 
-/**
- * Mini-map HUD overlay.
- *
- * Renders the root tile plus all stitched expansion tiles via TileGrid + TileRenderer.
- * The HUD size always shows the root tile at cfg.mapSize pixels; expansion tiles
- * extend beyond that boundary (clipped by scissor to mapSize × mapSize for a clean edge).
- */
 @Environment(EnvType.CLIENT)
 public class MinimapHud {
 
@@ -47,12 +40,10 @@ public class MinimapHud {
         MapState mapState = MapIdentity.stateOf(offHand, client.world);
         if (mapState == null) return;
 
-        // ── Dimension gate ────────────────────────────────────────────────
         if (!DimensionMapTracker.isMapRelevantForCurrentDimension(player, mapState)) return;
 
         MapEntryData mapEntry = ClientMapCache.getOrCreate(mapState, mapId);
 
-        // ── Layout ────────────────────────────────────────────────────────
         int size    = cfg.mapSize;
         int padding = cfg.padding;
         int sw      = context.getScaledWindowWidth();
@@ -66,37 +57,28 @@ public class MinimapHud {
             default          -> { boxX = sw - size - padding; boxY = sh - size - padding; }
         }
 
-        // ── Background ────────────────────────────────────────────────────
         int bgAlpha = ((int) (cfg.opacity() * 0.55f * 255) << 24);
         context.fill(boxX - 2, boxY - 2, boxX + size + 2, boxY + size + 2, bgAlpha);
 
-        // ── Build tile grid ───────────────────────────────────────────────
         TileGrid grid = TileGrid.build(mapId, mapState, mapEntry, client.world);
 
-        // ── Render tiles ──────────────────────────────────────────────────
         TileRenderer.renderHud(context, grid, mapState,
                 boxX, boxY, size,
                 player.getX(), player.getZ(), player.getYaw());
 
-        // ── Compass ───────────────────────────────────────────────────────
         if (cfg.showCompass) {
             renderCompass(context, boxX + size - 18, boxY + 2);
         }
 
-        // ── Dimension label ───────────────────────────────────────────────
         renderDimensionLabel(context, player, boxX, boxY, size);
 
-        // ── Expansion arrows ──────────────────────────────────────────────
         if (cfg.showExpansionArrows) {
             renderExpansionArrows(context, mapEntry, boxX, boxY, size);
         }
 
-        // ── Border ────────────────────────────────────────────────────────
         context.drawBorder(boxX - 2, boxY - 2, size + 4, size + 4,
                 ((int) (cfg.opacity() * 180) << 24) | 0x888888);
     }
-
-    // ── Compass ──────────────────────────────────────────────────────────
 
     private static void renderCompass(DrawContext ctx, int x, int y) {
         ctx.drawText(MinecraftClient.getInstance().textRenderer, "N", x + 3, y, 0xFFFF5555, true);
@@ -113,8 +95,6 @@ public class MinimapHud {
         int lw = tr.getWidth(label);
         ctx.drawText(tr, label, boxX + size / 2 - lw / 2, boxY + size + 2, 0xFFAAAAAA, true);
     }
-
-    // ── Expansion arrows ─────────────────────────────────────────────────
 
     private static void renderExpansionArrows(DrawContext ctx, MapEntryData mapEntry,
                                                int bx, int by, int size) {

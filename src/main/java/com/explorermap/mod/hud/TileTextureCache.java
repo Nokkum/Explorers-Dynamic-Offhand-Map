@@ -13,35 +13,6 @@ import net.minecraft.util.Identifier;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Per-tile GPU texture cache for the explorer mini-map.
- *
- * Problem solved
- * ──────────────
- * A naive renderer calls DrawContext.fill() once per pixel per frame —
- * up to 16 384 calls per tile at 60 fps. With 4 tiles that is nearly
- * 4 million Java-to-native calls per second, causing measurable frame drops.
- *
- * Solution
- * ────────
- * For each (dimension, mapId) pair we maintain one 128×128 RGBA NativeImage
- * and one DynamicTexture registered with the TextureManager. When the
- * underlying map data changes, we rebuild the image in one tight loop and
- * upload it to the GPU. Rendering is then a single drawTexture call per tile.
- *
- * Cache key
- * ─────────
- * Keyed by the plain raw integer map ID. MapIdComponent IDs are drawn from
- * a single counter shared by the whole server, never reused across
- * dimensions, so the raw int alone is already a stable, unique key.
- *
- * Dirty tracking
- * ──────────────
- * Each entry stores a "generation" counter. MapEntryData exposes
- * getDiscoveryGeneration(), incremented every time discover() flips a new
- * bit. When the cached generation differs, we rebuild — so the texture is
- * only rebuilt when discovery actually changes, not every frame.
- */
 @Environment(EnvType.CLIENT)
 public final class TileTextureCache {
 
@@ -55,12 +26,6 @@ public final class TileTextureCache {
 
     private TileTextureCache() {}
 
-    // ── Public API ────────────────────────────────────────────────────────
-
-    /**
-     * Returns the Identifier of the GPU texture for this tile, uploading
-     * a fresh image if the discovery data has changed since last frame.
-     */
     public Identifier getOrUpdate(int mapId, MapState mapState, MapEntryData mapEntry) {
         Entry entry = entries.get(mapId);
         long gen = mapEntry.getDiscoveryGeneration();
@@ -78,7 +43,6 @@ public final class TileTextureCache {
         return entry.identifier;
     }
 
-    /** Releases all GPU textures. Call on client disconnect. */
     public void clearAll() {
         var tm = MinecraftClient.getInstance().getTextureManager();
         for (Entry e : entries.values()) {
@@ -91,8 +55,6 @@ public final class TileTextureCache {
         entries.clear();
         nextSlot = 0;
     }
-
-    // ── Internal ──────────────────────────────────────────────────────────
 
     private void rebuild(Entry entry, MapState mapState, MapEntryData mapEntry) {
         byte[] colors  = mapState.colors;

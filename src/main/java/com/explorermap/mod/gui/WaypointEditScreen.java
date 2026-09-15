@@ -21,44 +21,22 @@ import com.explorermap.mod.network.SaveWaypointPayload;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Waypoint creation / editing dialog.
- *
- * Layout (320 × 200 dialog centred on screen):
- *
- *   ┌──────────────────────────────────────────┐
- *   │  Name: [__________________________]       │
- *   │                                           │
- *   │  Icon:  [pin] [village] [temple]          │
- *   │         [dungeon] [base]                  │
- *   │                                           │
- *   │  Color: ● ● ● ● ● ● ● ●                   │
- *   │                                           │
- *   │  Preview: [icon]  "My Waypoint"           │
- *   │                                           │
- *   │          [  Save  ]  [ Cancel ]           │
- *   └──────────────────────────────────────────┘
- *
- * Icons are rendered via WaypointIconRenderer as actual textures.
- * Color swatches are 14×14 px filled squares with a white selection ring.
- */
 @Environment(EnvType.CLIENT)
 public class WaypointEditScreen extends Screen {
 
-    // ── Color palette ─────────────────────────────────────────────────────
     private static final int[] COLORS = {
-        0xFFFFFFFF,  // white
-        0xFFFF5555,  // red
-        0xFF55FF55,  // lime
-        0xFF5599FF,  // blue
-        0xFFFFFF55,  // yellow
-        0xFFFF55FF,  // magenta
-        0xFF55FFFF,  // cyan
-        0xFFFFAA00,  // orange
-        0xFFAA55FF,  // purple
-        0xFFFF8855,  // coral
-        0xFF55FFAA,  // mint
-        0xFFCCCCCC,  // silver
+        0xFFFFFFFF,
+        0xFFFF5555,
+        0xFF55FF55,
+        0xFF5599FF,
+        0xFFFFFF55,
+        0xFFFF55FF,
+        0xFF55FFFF,
+        0xFFFFAA00,
+        0xFFAA55FF,
+        0xFFFF8855,
+        0xFF55FFAA,
+        0xFFCCCCCC,
     };
 
     private static final int SWATCH_SIZE = 14;
@@ -66,7 +44,6 @@ public class WaypointEditScreen extends Screen {
     private static final int ICON_CELL   = 22;
     private static final int ICON_GAP    = 4;
 
-    // ── State ─────────────────────────────────────────────────────────────
     private final Screen parent;
     private final Waypoint editingWaypoint;
 
@@ -75,13 +52,10 @@ public class WaypointEditScreen extends Screen {
     private int selectedIconIndex   = 0;
     private int selectedColorIndex  = 0;
 
-    // Layout anchors computed in init()
     private int dlgX, dlgY, dlgW, dlgH;
     private int iconGridX, iconGridY;
     private int colorGridX, colorGridY;
     private int previewX, previewY;
-
-    // ── Constructors ──────────────────────────────────────────────────────
 
     public WaypointEditScreen(Screen parent) {
         this(parent, null);
@@ -93,15 +67,12 @@ public class WaypointEditScreen extends Screen {
         this.editingWaypoint = existing;
     }
 
-    // ── Init ──────────────────────────────────────────────────────────────
-
     @Override
     protected void init() {
         super.init();
 
         iconIds = List.copyOf(ExplorerMapRegistry.allIconIds());
 
-        // Seed from existing waypoint if editing
         if (editingWaypoint != null) {
             int idx = iconIds.indexOf(editingWaypoint.iconId());
             if (idx >= 0) selectedIconIndex = idx;
@@ -110,14 +81,12 @@ public class WaypointEditScreen extends Screen {
             }
         }
 
-        // Dialog box centred on screen
         dlgW = 280; dlgH = 200;
         dlgX = (this.width  - dlgW) / 2;
         dlgY = (this.height - dlgH) / 2;
 
         int pad = 12;
 
-        // ── Name field ────────────────────────────────────────────────────
         int fieldY = dlgY + pad + 14;
         nameField = new TextFieldWidget(this.textRenderer,
                 dlgX + pad, fieldY, dlgW - pad * 2, 18,
@@ -127,7 +96,6 @@ public class WaypointEditScreen extends Screen {
         nameField.setPlaceholder(Text.translatable("explorermap.waypoint.default_name"));
         addDrawableChild(nameField);
 
-        // ── Icon grid (clickable cells) ───────────────────────────────────
         iconGridY = fieldY + 28;
         iconGridX = dlgX + pad;
 
@@ -143,7 +111,6 @@ public class WaypointEditScreen extends Screen {
         }
         int iconRows = (iconIds.size() + cols - 1) / Math.max(1, cols);
 
-        // ── Color swatches ────────────────────────────────────────────────
         colorGridY = iconGridY + iconRows * (ICON_CELL + ICON_GAP) + 10;
         colorGridX = dlgX + pad;
 
@@ -159,11 +126,9 @@ public class WaypointEditScreen extends Screen {
         }
         int colorRows = (COLORS.length + colorCols - 1) / Math.max(1, colorCols);
 
-        // ── Preview strip ─────────────────────────────────────────────────
         previewY = colorGridY + colorRows * (SWATCH_SIZE + SWATCH_GAP) + 10;
         previewX = dlgX + pad;
 
-        // ── Buttons ───────────────────────────────────────────────────────
         int btnY = dlgY + dlgH - 28;
         addDrawableChild(ButtonWidget.builder(Text.translatable("label.explorermap.save"),
                 btn -> save()).dimensions(dlgX + dlgW / 2 - 54, btnY, 50, 20).build());
@@ -172,31 +137,24 @@ public class WaypointEditScreen extends Screen {
                 .dimensions(dlgX + dlgW / 2 + 4, btnY, 50, 20).build());
     }
 
-    // ── Render ────────────────────────────────────────────────────────────
-
     @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
         this.renderBackground(ctx, mouseX, mouseY, delta);
 
-        // Dialog background
         ctx.fill(dlgX, dlgY, dlgX + dlgW, dlgY + dlgH, 0xEE1A1A1A);
         ctx.drawBorder(dlgX, dlgY, dlgW, dlgH, 0xFF555555);
 
         int pad = 12;
 
-        // Title
         ctx.drawCenteredTextWithShadow(this.textRenderer,
                 Text.translatable("screen.explorermap.waypoint_edit"), dlgX + dlgW / 2, dlgY + pad, 0xFFFFFFFF);
 
-        // "Name:" label
         ctx.drawTextWithShadow(this.textRenderer, "Name:",
-                dlgX + pad, dlgY + pad + 4, 0xFFAAAAAA); // "Name:" intentionally short — not worth a key
+                dlgX + pad, dlgY + pad + 4, 0xFFAAAAAA);
 
-        // "Icon:" label
         ctx.drawTextWithShadow(this.textRenderer, "Icon:",
                 dlgX + pad, iconGridY - 11, 0xFFAAAAAA);
 
-        // Icon grid cells
         int cols = Math.max(1, (dlgW - pad * 2 + ICON_GAP) / (ICON_CELL + ICON_GAP));
         for (int i = 0; i < iconIds.size(); i++) {
             int col = i % cols, row = i / cols;
@@ -207,11 +165,9 @@ public class WaypointEditScreen extends Screen {
                     bx, by, ICON_CELL, i == selectedIconIndex);
         }
 
-        // "Color:" label
         ctx.drawTextWithShadow(this.textRenderer, "Color:",
                 dlgX + pad, colorGridY - 11, 0xFFAAAAAA);
 
-        // Color swatches
         int colorCols = Math.max(1, (dlgW - pad * 2 + SWATCH_GAP) / (SWATCH_SIZE + SWATCH_GAP));
         for (int i = 0; i < COLORS.length; i++) {
             int col = i % colorCols, row = i / colorCols;
@@ -223,7 +179,6 @@ public class WaypointEditScreen extends Screen {
             }
         }
 
-        // Preview
         if (!iconIds.isEmpty()) {
             String name = nameField.getText().isEmpty() ? Text.translatable("explorermap.waypoint.default_name").getString() : nameField.getText();
             Identifier tex = ExplorerMapRegistry.getWaypointTexture(iconIds.get(selectedIconIndex));
@@ -237,8 +192,6 @@ public class WaypointEditScreen extends Screen {
         super.render(ctx, mouseX, mouseY, delta);
     }
 
-    // ── Save ──────────────────────────────────────────────────────────────
-
     private void save() {
         if (client == null || client.player == null) return;
 
@@ -248,9 +201,6 @@ public class WaypointEditScreen extends Screen {
         String iconId = iconIds.isEmpty() ? Waypoint.DEFAULT_ICON : iconIds.get(selectedIconIndex);
         int color = COLORS[selectedColorIndex];
 
-        // Preserve the original position when editing an existing waypoint.
-        // Only new waypoints (created via "+ Waypoint") are placed at the
-        // player's current location — editing must not silently relocate them.
         double wx, wz;
         if (editingWaypoint != null) {
             wx = editingWaypoint.worldX();
@@ -271,8 +221,6 @@ public class WaypointEditScreen extends Screen {
         int mapId = MapIdentity.rawIdOf(offHand);
         if (mapId < 0) { client.setScreen(parent); return; }
 
-        // Optimistic local update so the HUD reflects the change immediately
-        // (server will echo back authoritative state via SyncWaypointsPayload)
         var mapState = MapIdentity.stateOf(offHand, client.world);
         if (mapState != null) {
             var mapEntry = ClientMapCache.getOrCreate(mapState, mapId);
@@ -280,7 +228,6 @@ public class WaypointEditScreen extends Screen {
             mapEntry.addWaypoint(wp);
         }
 
-        // Persist on server
         ClientPlayNetworking.send(new SaveWaypointPayload(mapId, wp));
 
         client.setScreen(parent);

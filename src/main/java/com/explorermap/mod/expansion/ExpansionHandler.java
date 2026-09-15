@@ -10,23 +10,11 @@ import net.minecraft.item.Items;
 import net.minecraft.item.map.MapState;
 import net.minecraft.util.Hand;
 
-/**
- * Client-side expansion helper.
- *
- * The authoritative expansion logic lives entirely on the server
- * (RequestExpansionPayload → MapStateLocator → GrantExpansionPayload).
- * This class only reads the client's local mirror (ClientMapCache) to decide
- * how to draw the UI — it never mutates anything or sends packets itself.
- */
 @Environment(EnvType.CLIENT)
 public final class ExpansionHandler {
 
     private ExpansionHandler() {}
 
-    /**
-     * Returns true if the player has the resources to expand.
-     * Standard: 1× Paper. HD: 1× Paper + 1× Ink Sac + 1× Compass.
-     */
     public static boolean canExpand(ClientPlayerEntity player, boolean highDetail) {
         var inv = player.getInventory();
         if (!inv.contains(Items.PAPER.getDefaultStack())) return false;
@@ -37,7 +25,6 @@ public final class ExpansionHandler {
         return true;
     }
 
-    /** Returns true if the current off-hand map is already expanded in this direction. */
     public static boolean alreadyExpanded(ClientPlayerEntity player, ExpansionRecord.Direction direction) {
         var offHand = player.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand) || player.getWorld() == null) return false;

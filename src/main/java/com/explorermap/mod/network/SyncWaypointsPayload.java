@@ -22,26 +22,11 @@ import net.minecraft.util.Hand;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * S2C: server pushes the full waypoint list for a specific map to a client.
- *
- * Sent:
- *   - To every player currently holding the map, after a save or delete
- *     (see broadcastTo() below) — an earlier revision only echoed the change
- *     back to the player who made it, so other players holding the same map
- *     would not see waypoint edits until their next relog.
- *   - To a single player when they join (ServerEventHandler.JOIN), or when
- *     they first equip a map with existing waypoints in a session.
- *
- * The client replaces its in-memory waypoint list entirely (last-write-wins),
- * so this is safe to send multiple times.
- */
 public record SyncWaypointsPayload(
         int mapId,
         List<Waypoint> waypoints
 ) implements CustomPayload {
 
-    /** Hard ceiling on waypoints per map accepted in a single sync packet. */
     private static final int MAX_WAYPOINTS = 512;
 
     public static final CustomPayload.Id<SyncWaypointsPayload> ID =
@@ -59,9 +44,6 @@ public record SyncWaypointsPayload(
     @Override
     public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
 
-    // ── Server-side: send to one player ───────────────────────────────────
-
-    /** Sends a single player the current waypoint list for the given map. */
     public static void sendTo(ServerPlayerEntity player, int mapId) {
         var world = player.getServerWorld();
         var entry = ExplorerMapSavedData.get(player.getServer()).get(world, mapId);
@@ -69,14 +51,6 @@ public record SyncWaypointsPayload(
         ServerPlayNetworking.send(player, new SyncWaypointsPayload(mapId, waypoints));
     }
 
-    /**
-     * Sends the current waypoint list to every online player who is
-     * currently holding this map ID in their off-hand.
-     *
-     * An earlier revision only echoed changes back to the player who made
-     * them, so a second player holding the same map would never see waypoint
-     * edits until their next relog — this fixes that by broadcasting.
-     */
     public static void broadcastTo(MinecraftServer server, int mapId) {
         for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
             var offHand = p.getStackInHand(Hand.OFF_HAND);
@@ -86,8 +60,6 @@ public record SyncWaypointsPayload(
             }
         }
     }
-
-    // ── Client handler ────────────────────────────────────────────────────
 
     @Environment(EnvType.CLIENT)
     public static void registerClient() {

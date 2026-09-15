@@ -12,16 +12,8 @@ import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-/**
- * C2S: client requests deletion of a named waypoint from a map.
- *
- * Server removes it from ExplorerMapSavedData and broadcasts the updated
- * list to every player currently holding the map — not just the sender,
- * so other players see the deletion immediately rather than on next relog.
- */
 public record DeleteWaypointPayload(int mapId, String waypointName) implements CustomPayload {
 
-    /** Matches Waypoint's own name length bound; rejects abusive packet content early. */
     private static final int MAX_NAME_LENGTH = 64;
 
     public static final CustomPayload.Id<DeleteWaypointPayload> ID =

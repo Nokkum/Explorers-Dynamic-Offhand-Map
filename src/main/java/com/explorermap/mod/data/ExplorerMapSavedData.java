@@ -15,37 +15,6 @@ import net.minecraft.world.World;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Mod-owned persistent saved data holding all Explorer Map per-map entries,
- * keyed by the map's raw integer ID.
- *
- * Why the key is a plain int, not (dimension, id)
- * ─────────────────────────────────────────────────
- * An earlier draft of this class qualified the key by dimension as a
- * defensive measure. That turned out to introduce a real risk rather than
- * remove one: MapIdComponent IDs are drawn from a single counter shared by
- * the entire server (World.increaseAndGetMapId()), never reused across
- * dimensions, so the raw int is already a globally unique key. Qualifying
- * it by dimension only matters if every caller is guaranteed to pass the
- * map's own true dimension (mapState.dimension) — but callers often only
- * have "whichever World the player currently happens to be standing in"
- * on hand, and using that instead would split a single physical map across
- * two different, disconnected entries. A plain int key cannot suffer that
- * inconsistency, so that is what is used here.
- *
- * Architecture note
- * ─────────────────
- * An earlier revision tried to attach this data directly to MapState via
- * Fabric's Data Attachment API — an API that only targets Entity,
- * BlockEntity, ServerWorld, and Chunk, never PersistentState. That could not
- * compile. This class is the correct replacement: a real PersistentState
- * subclass, retrieved through ServerWorld.getPersistentStateManager().
- *
- * Dirty tracking
- * ──────────────
- * Every mutation method below calls markDirty() itself, so callers never
- * need to remember to do so manually.
- */
 public class ExplorerMapSavedData extends PersistentState {
 
     private static final String SAVE_ID = "explorermap_data";
@@ -58,13 +27,10 @@ public class ExplorerMapSavedData extends PersistentState {
         this.entries.putAll(entries);
     }
 
-    // ── Access ───────────────────────────────────────────────────────────
-
     public MapEntryData getOrCreate(int mapId) {
         return entries.computeIfAbsent(mapId, k -> new MapEntryData());
     }
 
-    /** Convenience overload; the World parameter is accepted for call-site clarity but unused for keying. */
     public MapEntryData getOrCreate(World ignoredDimension, int mapId) {
         return getOrCreate(mapId);
     }
@@ -76,8 +42,6 @@ public class ExplorerMapSavedData extends PersistentState {
     public MapEntryData get(World ignoredDimension, int mapId) {
         return get(mapId);
     }
-
-    // ── Dirty-tracking mutation wrappers ─────────────────────────────────
 
     public boolean mergeBitmask(World dimension, int mapId, byte[] bitmask) {
         boolean changed = getOrCreate(mapId).mergeBitmask(bitmask);
@@ -100,15 +64,6 @@ public class ExplorerMapSavedData extends PersistentState {
         markDirty();
     }
 
-    // ── Server-side accessor ─────────────────────────────────────────────
-
-    /**
-     * Retrieves (creating if necessary) the single server-wide instance of
-     * this saved data, stored under the Overworld's PersistentStateManager
-     * as the canonical location — map IDs are drawn from one counter shared
-     * by the whole server regardless of dimension, so there is exactly one
-     * instance of this data for the entire server.
-     */
     public static ExplorerMapSavedData get(MinecraftServer server) {
         ServerWorld overworld = server.getWorld(World.OVERWORLD);
         if (overworld == null) {
@@ -116,8 +71,6 @@ public class ExplorerMapSavedData extends PersistentState {
         }
         return overworld.getPersistentStateManager().getOrCreate(TYPE, SAVE_ID);
     }
-
-    // ── Persistence ──────────────────────────────────────────────────────
 
     private record Entry(int key, MapEntryData value) {
         static final Codec<Entry> CODEC = RecordCodecBuilder.create(instance ->
@@ -149,12 +102,6 @@ public class ExplorerMapSavedData extends PersistentState {
             }
     );
 
-    /**
-     * Registration type for 1.21.1's PersistentStateManager API, which at
-     * this version still uses the nested PersistentState.Type<T> record
-     * with a BiFunction deserializer, rather than the later top-level
-     * PersistentStateType introduced in subsequent 1.21.x releases.
-     */
     public static final PersistentState.Type<ExplorerMapSavedData> TYPE = new PersistentState.Type<>(
             ExplorerMapSavedData::new,
             (nbt, registries) -> fromNbt(nbt, registries),

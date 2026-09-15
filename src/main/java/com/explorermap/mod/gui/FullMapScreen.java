@@ -24,18 +24,6 @@ import net.minecraft.item.map.MapState;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 
-/**
- * Full-scale map GUI.
- *
- * Features:
- *   - Discovered-pixel-only rendering (fog on unseen areas)
- *   - Mouse scroll zoom (0.5x-4x)
- *   - Left-click drag pan
- *   - Expansion buttons -> real C2S packet
- *   - + Waypoint -> WaypointEditScreen
- *   - Right-click a waypoint -> Edit/Delete context menu
- *   - Compass rose, discovery progress bar, player arrow
- */
 @Environment(EnvType.CLIENT)
 public class FullMapScreen extends Screen {
 
@@ -59,7 +47,6 @@ public class FullMapScreen extends Screen {
         super(Text.translatable("screen.explorermap.full_map"));
     }
 
-    // Layout
     private int canvasSize() { return Math.min(BASE_CANVAS, Math.min(this.width, this.height) - 80); }
     private int canvasX()    { return (this.width  - canvasSize()) / 2; }
     private int canvasY()    { return (this.height - canvasSize()) / 2; }

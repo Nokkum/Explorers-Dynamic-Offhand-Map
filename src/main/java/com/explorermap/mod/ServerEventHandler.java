@@ -9,17 +9,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
 
-/**
- * Registers server-side Fabric events for the Explorer Map mod.
- *
- * Events handled
- * ──────────────
- * JOIN — Syncs waypoints for all filled maps in the player's off-hand/hotbar.
- *        Also runs structure detection against already-discovered pixels so
- *        structures explored in a previous session get waypoints
- *        retroactively (e.g. after updating the mod, or receiving a map
- *        from another player).
- */
 public final class ServerEventHandler {
 
     private ServerEventHandler() {}
@@ -27,7 +16,7 @@ public final class ServerEventHandler {
     public static void register() {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
-            // Delay 1 tick so inventory is fully loaded
+
             server.execute(() -> onPlayerJoin(player));
         });
     }
@@ -51,7 +40,6 @@ public final class ServerEventHandler {
 
         SyncWaypointsPayload.sendTo(player, mapId);
 
-        // Retroactive structure detection against previously-discovered pixels.
         var savedData = ExplorerMapSavedData.get(player.getServer());
         StructureWaypointDetector.checkAndPlace(player.getServer(), player, mapId, mapState, savedData);
 

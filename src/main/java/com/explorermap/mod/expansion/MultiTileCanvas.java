@@ -2,50 +2,24 @@ package com.explorermap.mod.expansion;
 
 import net.minecraft.item.map.MapState;
 
-/**
- * Coordinate model for a stitched multi-tile canvas.
- *
- * Converts between three coordinate spaces:
- *
- *   World space   – Minecraft block coordinates (double X, Z)
- *   Canvas space  – pixel coordinates within the full stitched image
- *                   origin = top-left of the westmost/northmost tile
- *                   size   = (gridCols * 128) × (gridRows * 128) pixels
- *   Screen space  – final rendered pixels after zoom + pan + screen offset
- *
- * Arithmetic is all done in canvas space (integer pixels) so the renderers
- * only need simple scale + offset math, not per-tile conditionals.
- *
- * Usage:
- *   MultiTileCanvas canvas = MultiTileCanvas.from(grid, rootState);
- *   int originX = canvas.defaultScreenOriginX(screenCentreX, zoom, panX);
- *   int screenX = originX + Math.round(canvasPixelX * zoom);
- *   // canvas pixel of a world coord:
- *   int cpx = canvas.worldToCanvasX(worldX);
- */
 public final class MultiTileCanvas {
 
-    /** Total canvas width in map pixels (gridCols * 128). */
     public final int canvasWidthPx;
-    /** Total canvas height in map pixels (gridRows * 128). */
+
     public final int canvasHeightPx;
 
-    /** Grid offset of the westmost column (most negative gridX). Negative or 0. */
     public final int minGridX;
-    /** Grid offset of the northernmost row (most negative gridZ). Negative or 0. */
+
     public final int minGridZ;
 
-    /** Total grid columns. */
     public final int gridCols;
-    /** Total grid rows. */
+
     public final int gridRows;
 
-    /** Blocks per map pixel of the root tile. */
     public final int scale;
 
-    /** World X of the canvas top-left corner (pixel 0,0). */
     public final int worldOriginX;
-    /** World Z of the canvas top-left corner (pixel 0,0). */
+
     public final int worldOriginZ;
 
     private MultiTileCanvas(int minGridX, int minGridZ, int gridCols, int gridRows,
@@ -58,7 +32,6 @@ public final class MultiTileCanvas {
         this.canvasWidthPx  = gridCols * 128;
         this.canvasHeightPx = gridRows * 128;
 
-        // World origin: top-left of the northernmost/westernmost tile
         int tileBlocks     = 128 * scale;
         int rootTileOriginX = rootCenterX - tileBlocks / 2;
         int rootTileOriginZ = rootCenterZ - tileBlocks / 2;
@@ -66,7 +39,6 @@ public final class MultiTileCanvas {
         this.worldOriginZ  = rootTileOriginZ + minGridZ * tileBlocks;
     }
 
-    /** Build a MultiTileCanvas from a TileGrid. */
     public static MultiTileCanvas from(TileGrid grid, MapState rootState) {
         int minGX = 0, maxGX = 0, minGZ = 0, maxGZ = 0;
         for (TileGrid.TileEntry t : grid.tiles()) {
@@ -80,30 +52,18 @@ public final class MultiTileCanvas {
                 scale, rootState.centerX, rootState.centerZ);
     }
 
-    // ── World → Canvas ────────────────────────────────────────────────────
-
-    /** Converts a world X coordinate to a canvas pixel column. */
     public int worldToCanvasX(double worldX) {
         return (int)((worldX - worldOriginX) / scale);
     }
 
-    /** Converts a world Z coordinate to a canvas pixel row. */
     public int worldToCanvasZ(double worldZ) {
         return (int)((worldZ - worldOriginZ) / scale);
     }
 
-    // ── Screen origin helpers ─────────────────────────────────────────────
-
-    /**
-     * Returns the screen X of canvas pixel (0,0) such that the root tile (gridX=0)
-     * is centred inside a screen rect of width screenW, accounting for pan.
-     *
-     * Used by FullMapScreen to keep the root tile in the middle when no pan applied.
-     */
     public int defaultScreenOriginX(int screenCentreX, float zoom, float panX) {
-        // Root tile's left edge in canvas coords: (-minGridX) * 128 px
+
         int rootCanvasLeft  = (-minGridX) * 128;
-        int rootCanvasCentre = rootCanvasLeft + 64; // root tile centre
+        int rootCanvasCentre = rootCanvasLeft + 64;
         return screenCentreX - Math.round(rootCanvasCentre * zoom) + (int)panX;
     }
 
@@ -113,28 +73,14 @@ public final class MultiTileCanvas {
         return screenCentreY - Math.round(rootCanvasCentre * zoom) + (int)panY;
     }
 
-    // ── Per-tile canvas origin ────────────────────────────────────────────
-
-    /** Canvas pixel column of the top-left of tile at gridX. */
     public int tileCanvasX(int gridX) { return (gridX - minGridX) * 128; }
 
-    /** Canvas pixel row of the top-left of tile at gridZ. */
     public int tileCanvasZ(int gridZ) { return (gridZ - minGridZ) * 128; }
 
-    // ── HUD helper ────────────────────────────────────────────────────────
-
-    /**
-     * Computes the rendered tile pixel size for the HUD so the full grid fits
-     * inside a square HUD box of hudSize pixels.
-     */
     public int hudRenderedTileSize(int hudSize) {
         return Math.max(4, Math.min(hudSize / gridCols, hudSize / gridRows));
     }
 
-    /**
-     * Returns the screen X of canvas pixel (0,0) for the HUD layout,
-     * centering the full grid inside the HUD box.
-     */
     public int hudScreenOriginX(int hudBoxX, int hudSize) {
         int tileSize   = hudRenderedTileSize(hudSize);
         int totalWidth = gridCols * tileSize;

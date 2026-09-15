@@ -1,5 +1,4 @@
 {
-  "_comment": "Explorer's Dynamic Off-Hand Map — English (United States)",
   "modmenu.nameTranslation.explorermap": "Explorer's Dynamic Off-Hand Map",
   "modmenu.descriptionTranslation.explorermap": "Camera-based fog-of-discovery mini-map HUD. Hold a filled map in your off-hand to reveal the world as you look at it.",
   "key.categories.explorermap": "Explorer Map",

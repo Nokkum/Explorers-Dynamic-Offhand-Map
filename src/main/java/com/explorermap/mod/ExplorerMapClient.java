@@ -22,43 +22,27 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
 
-/**
- * Client-only entrypoint.
- *
- * Registers:
- *  - HudRenderCallback → MinimapHud
- *  - ClientTickEvents  → ExplorationEngine (camera-based discovery)
- *  - Key binding       → open FullMapScreen
- */
 @Environment(EnvType.CLIENT)
 public class ExplorerMapClient implements ClientModInitializer {
 
-    /** Keybind: open the full-scale map GUI (default: M) */
     public static KeyBinding OPEN_MAP_KEY;
 
     @Override
     public void onInitializeClient() {
         ExplorerMapConfig.load();
 
-        // Register S2C client handler for expansion grants
         GrantExpansionPayload.registerClient();
 
-        // Register S2C client handler for waypoint sync
         SyncWaypointsPayload.registerClient();
 
-        // Register S2C client handler for multiplayer discovery broadcast
         SyncDiscoveryPayload.Broadcast.registerClient();
 
-        // Register S2C client handler for expansion failure feedback
         ExpansionFailedPayload.registerClient();
 
-        // Register the mini-map HUD overlay
         HudRenderCallback.EVENT.register(MinimapHud::render);
 
-        // Register the per-tick exploration engine
         ClientTickEvents.END_CLIENT_TICK.register(ExplorationEngine::tick);
 
-        // Register keybind for full-scale map
         OPEN_MAP_KEY = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.explorermap.open_map",
                 InputUtil.Type.KEYSYM,
@@ -66,7 +50,6 @@ public class ExplorerMapClient implements ClientModInitializer {
                 "category.explorermap"
         ));
 
-        // Handle keybind press → open GUI
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (OPEN_MAP_KEY.wasPressed()) {
                 if (client.player != null) {
@@ -75,9 +58,6 @@ public class ExplorerMapClient implements ClientModInitializer {
             }
         });
 
-        // Clear client-side caches on disconnect so stale data / GPU textures
-        // don't survive into a new session; a fresh copy re-syncs from the
-        // server on the next join anyway.
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             TileTextureCache.getInstance().clearAll();
             ClientMapCache.clearAll();

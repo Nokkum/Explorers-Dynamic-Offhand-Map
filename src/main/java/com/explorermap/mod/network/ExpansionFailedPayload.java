@@ -14,13 +14,6 @@ import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-/**
- * S2C: server notifies the client that a RequestExpansionPayload failed,
- * so the UI can show clear feedback instead of the button silently doing nothing.
- *
- * Reasons are a small closed set (not free text) to keep the packet tiny and
- * so the client can localize the message via translation keys.
- */
 public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason reason)
         implements CustomPayload {
 
@@ -50,9 +43,6 @@ public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason
     @Override
     public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
 
-    // ── Registration ──────────────────────────────────────────────────────
-
-    /** Call from ExplorerMapMod.onInitialize() (common side, S2C payload type). */
     public static void registerCommon() {
         PayloadTypeRegistry.playS2C().register(ID, CODEC);
     }
@@ -63,14 +53,13 @@ public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason
                 ctx.client().execute(() -> handleOnClient(payload)));
     }
 
-    /** Convenience for server code to send a failure notice. */
     public static void sendTo(ServerPlayerEntity player, ExpansionRecord.Direction dir, Reason reason) {
         ServerPlayNetworking.send(player, new ExpansionFailedPayload(dir, reason));
     }
 
     @Environment(EnvType.CLIENT)
     private static void handleOnClient(ExpansionFailedPayload payload) {
-        // Store the failure so FullMapScreen can render a toast/flash on its next frame.
+
         ExpansionFeedback.reportFailure(payload.direction(), payload.reason());
     }
 }

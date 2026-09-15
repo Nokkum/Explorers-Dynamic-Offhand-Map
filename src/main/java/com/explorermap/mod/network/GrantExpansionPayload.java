@@ -15,11 +15,6 @@ import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Hand;
 
-/**
- * S2C: server grants an expansion, sending the real vanilla map ID back to
- * the client. Carries highDetail so the client's local mirror records it
- * accurately.
- */
 public record GrantExpansionPayload(
         ExpansionRecord.Direction direction,
         int mapId,

@@ -8,43 +8,17 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Per-map exploration data: the fog-of-discovery bitmask, directional
- * expansion records, and waypoints for a single vanilla map.
- *
- * This replaces the old MapDiscoveryAttachment design, which incorrectly
- * tried to attach itself to MapState via Fabric's Data Attachment API —
- * an API that only targets Entity, BlockEntity, ServerWorld, and Chunk,
- * never PersistentState/MapState.
- *
- * Instead, every MapEntryData lives inside ExplorerMapSavedData, a proper
- * mod-owned PersistentState keyed by the map's raw integer ID (the `id`
- * component of its MapIdComponent). ExplorerMapSavedData owns dirty-marking:
- * any mutation method here should be followed by the caller invoking
- * ExplorerMapSavedData.markDirty() (see that class for the wrapper accessors
- * that do this automatically).
- *
- * This class itself holds no reference to its owning SavedData or to any
- * MapState/World — it is a plain, serializable data holder.
- */
 public final class MapEntryData {
 
     public static final int MAP_SIZE    = 128;
-    public static final int PIXEL_COUNT = MAP_SIZE * MAP_SIZE;   // 16 384
-    public static final int BYTE_COUNT  = PIXEL_COUNT / 8;       //  2 048
+    public static final int PIXEL_COUNT = MAP_SIZE * MAP_SIZE;
+    public static final int BYTE_COUNT  = PIXEL_COUNT / 8;
 
-    /** Raw discovery bitmask. Bit (row*128+col) = pixel (col,row) discovered. */
     private final byte[] discoveredPixels;
 
     private final List<ExpansionRecord> expansions;
     private final List<Waypoint> waypoints;
 
-    /**
-     * In-memory-only counter incremented whenever discover() actually flips
-     * a new bit. Used by the client's texture cache to know when to rebuild
-     * a tile's GPU texture. Not persisted — resets to 0 on load, which is
-     * harmless since it only gates a redundant-rebuild optimization.
-     */
     private transient long discoveryGeneration = 0L;
 
     public MapEntryData() {
@@ -60,9 +34,6 @@ public final class MapEntryData {
         this.waypoints = new ArrayList<>(waypoints);
     }
 
-    // ── Discovery bitmask ────────────────────────────────────────────────
-
-    /** Marks pixel (col,row) discovered. Returns true if this changed anything. */
     public boolean discover(int col, int row) {
         if (col < 0 || col >= MAP_SIZE || row < 0 || row >= MAP_SIZE) return false;
         int bit = row * MAP_SIZE + col;
@@ -96,12 +67,6 @@ public final class MapEntryData {
         return discoveryGeneration;
     }
 
-    /**
-     * OR-merges an externally supplied bitmask (exactly BYTE_COUNT bytes
-     * expected; shorter arrays are treated as zero-padded, anything longer
-     * is truncated by the caller before this is invoked). Returns true if
-     * any new pixel was revealed.
-     */
     public boolean mergeBitmask(byte[] other) {
         boolean changed = false;
         int n = Math.min(other.length, BYTE_COUNT);
@@ -116,9 +81,6 @@ public final class MapEntryData {
         return changed;
     }
 
-    // ── Expansions ───────────────────────────────────────────────────────
-
-    /** Returns an unmodifiable snapshot — callers must go through addExpansion() to mutate. */
     public List<ExpansionRecord> getExpansions() {
         return List.copyOf(expansions);
     }
@@ -131,9 +93,6 @@ public final class MapEntryData {
         return expansions.stream().anyMatch(r -> r.direction() == dir);
     }
 
-    // ── Waypoints ────────────────────────────────────────────────────────
-
-    /** Returns an unmodifiable snapshot — callers must go through the mutation methods below. */
     public List<Waypoint> getWaypoints() {
         return List.copyOf(waypoints);
     }
@@ -150,8 +109,6 @@ public final class MapEntryData {
         waypoints.clear();
         waypoints.addAll(newList);
     }
-
-    // ── Codec ────────────────────────────────────────────────────────────
 
     private static final Codec<byte[]> BITMASK_CODEC = Codec.LONG.listOf().xmap(
             longs -> {

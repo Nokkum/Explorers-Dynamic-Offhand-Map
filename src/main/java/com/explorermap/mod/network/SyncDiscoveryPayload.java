@@ -22,33 +22,6 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
 
-/**
- * Multiplayer discovery sync — merges fog-of-discovery bitmasks across
- * all players holding the same vanilla map.
- *
- * Protocol
- * ────────
- * C2S  Upload    – client sends its current 128x128 discovery bitmask for
- *                  the map it is holding. Sent at most once per
- *                  UPLOAD_INTERVAL_TICKS, only when new pixels exist.
- * S2C  Broadcast – server ORs all received bitmasks together and pushes
- *                  the merged result to every online player holding that
- *                  map ID.
- *
- * Wire format: the bitmask travels as a length-bounded raw byte array
- * (PacketCodecs.byteArray(MapEntryData.BYTE_COUNT)) rather than a list of
- * longs — this is both simpler and closes the "unbounded collection size"
- * class of bug by construction, since the codec itself rejects anything
- * longer than exactly 2048 bytes during decode.
- *
- * Possession check
- * ─────────────────
- * The server never trusts payload.mapId() as "the map to merge into" without
- * first confirming the sender is actually holding that exact map in their
- * off-hand. An earlier revision resolved the MapState purely from the
- * client-supplied ID, which would let any player upload (and therefore
- * corrupt or fabricate) discovery data for a map they've never even seen.
- */
 public final class SyncDiscoveryPayload {
 
     public record Upload(int mapId, byte[] bitmask) implements CustomPayload {
@@ -72,7 +45,7 @@ public final class SyncDiscoveryPayload {
         }
 
         private static void handleOnServer(MinecraftServer server, ServerPlayerEntity sender, Upload payload) {
-            // Possession check: the sender must actually be holding this exact map.
+
             var offHand = sender.getStackInHand(Hand.OFF_HAND);
             if (!ExplorerMapMod.isFilledMap(offHand)) return;
             if (MapIdentity.rawIdOf(offHand) != payload.mapId()) {
@@ -144,8 +117,6 @@ public final class SyncDiscoveryPayload {
             mapEntry.mergeBitmask(payload.bitmask());
         }
     }
-
-    // ── Upload throttle helpers ───────────────────────────────────────────
 
     public static final int UPLOAD_INTERVAL_TICKS = 60;
 

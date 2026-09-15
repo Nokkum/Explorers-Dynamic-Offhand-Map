@@ -18,21 +18,6 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
 
-/**
- * C2S packet: client requests a directional map expansion.
- *
- * Flow:
- *   1. Client: player clicks expand button in FullMapScreen.
- *   2. Client: sends RequestExpansionPayload(direction, highDetail) to server.
- *   3. Server: verifies the player is actually holding a filled map (never
- *      trusts a client-supplied map ID directly — see F07/F08 in the review),
- *      validates resources, creates/finds the adjacent MapState, then replies
- *      with GrantExpansionPayload(direction, realMapId) OR
- *      ExpansionFailedPayload(direction, reason) on failure.
- *   4. Client: receives GrantExpansionPayload and records the ExpansionRecord
- *      in its local ClientMapCache mirror, or receives ExpansionFailedPayload
- *      and shows a toast via ExpansionFeedback.
- */
 public record RequestExpansionPayload(
         ExpansionRecord.Direction direction,
         boolean highDetail
@@ -62,13 +47,6 @@ public record RequestExpansionPayload(
         });
     }
 
-    /**
-     * Server handler. The map to expand is always the one the requesting
-     * player is currently holding in their off-hand — never a client-supplied
-     * ID — so there is no possession check to perform beyond confirming the
-     * stack itself is a filled map. This closes the class of bug where a
-     * client could otherwise name an arbitrary map ID it doesn't hold.
-     */
     private static void handleOnServer(ServerPlayerEntity player, RequestExpansionPayload payload) {
         var offHand = player.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) {
