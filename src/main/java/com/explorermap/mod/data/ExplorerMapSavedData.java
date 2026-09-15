@@ -1,8 +1,11 @@
 package com.explorermap.mod.data;
 
+import com.explorermap.mod.ExplorerMapMod;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.registry.RegistryOps;
 import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
@@ -159,18 +162,18 @@ public class ExplorerMapSavedData extends PersistentState {
     );
 
     private static ExplorerMapSavedData fromNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registries) {
-        var ops = net.minecraft.registry.RegistryOps.of(net.minecraft.nbt.NbtOps.INSTANCE, registries);
+        var ops = RegistryOps.of(NbtOps.INSTANCE, registries);
         return CODEC.parse(ops, nbt)
-                .resultOrPartial(err -> com.explorermap.mod.ExplorerMapMod.LOGGER
+                .resultOrPartial(err -> ExplorerMapMod.LOGGER
                         .error("[ExplorerMap] Failed to parse saved data: {}", err))
                 .orElseGet(ExplorerMapSavedData::new);
     }
 
     @Override
     public NbtCompound writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registries) {
-        var ops = net.minecraft.registry.RegistryOps.of(net.minecraft.nbt.NbtOps.INSTANCE, registries);
+        var ops = RegistryOps.of(NbtOps.INSTANCE, registries);
         var encoded = CODEC.encodeStart(ops, this);
-        encoded.resultOrPartial(err -> com.explorermap.mod.ExplorerMapMod.LOGGER
+        encoded.resultOrPartial(err -> ExplorerMapMod.LOGGER
                 .error("[ExplorerMap] Failed to encode saved data: {}", err))
                 .ifPresent(tag -> {
                     if (tag instanceof NbtCompound compound) {

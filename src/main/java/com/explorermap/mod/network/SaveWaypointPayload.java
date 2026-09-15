@@ -6,6 +6,7 @@ import com.explorermap.mod.registry.ExplorerMapRegistry;
 import com.explorermap.mod.waypoint.Waypoint;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.component.type.MapIdComponent;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
@@ -56,7 +57,7 @@ public record SaveWaypointPayload(int mapId, Waypoint waypoint) implements Custo
 
     private static void handleOnServer(ServerPlayerEntity player, SaveWaypointPayload payload) {
         var world    = player.getServerWorld();
-        var mapState = world.getMapState(new net.minecraft.component.type.MapIdComponent(payload.mapId()));
+        var mapState = world.getMapState(new MapIdComponent(payload.mapId()));
 
         if (mapState == null) {
             ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: map #{} not found for {}",

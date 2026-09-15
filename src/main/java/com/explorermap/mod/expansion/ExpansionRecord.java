@@ -7,7 +7,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
  * Represents a single directional expansion of the player's map coverage.
  *
  * When a player spends paper to expand North, a new ExpansionRecord is added
- * to the attachment with direction=NORTH and the vanilla map ID of the newly
+ * to the map's MapEntryData with direction=NORTH and the vanilla map ID of the newly
  * tracked tile.
  *
  * highDetail = true means the player used ink+compass for a high-detail
