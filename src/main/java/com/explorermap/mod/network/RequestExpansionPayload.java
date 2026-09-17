@@ -28,10 +28,7 @@ public record RequestExpansionPayload(
 
     public static final PacketCodec<PacketByteBuf, RequestExpansionPayload> CODEC =
             PacketCodec.tuple(
-                    PacketCodecs.STRING.xmap(
-                            ExpansionRecord.Direction::valueOf,
-                            ExpansionRecord.Direction::name
-                    ), RequestExpansionPayload::direction,
+                    ExpansionRecord.Direction.PACKET_CODEC, RequestExpansionPayload::direction,
                     PacketCodecs.BOOL, RequestExpansionPayload::highDetail,
                     RequestExpansionPayload::new
             );
@@ -66,7 +63,7 @@ public record RequestExpansionPayload(
         int mapId = MapIdentity.rawIdOf(offHand);
         var savedData = ExplorerMapSavedData.get(player.getServer());
 
-        if (savedData.getOrCreate(world, mapId).hasExpansion(payload.direction())) {
+        if (savedData.getOrCreate(mapId).hasExpansion(payload.direction())) {
             ExpansionFailedPayload.sendTo(player, payload.direction(),
                     ExpansionFailedPayload.Reason.ALREADY_EXPANDED);
             return;
@@ -88,7 +85,7 @@ public record RequestExpansionPayload(
             case EAST  -> adjX += tileWidth;
         }
 
-        int newMapId = MapStateLocator.findOrCreate(world, adjX, adjZ, (byte) mapState.scale);
+        int newMapId = MapStateLocator.findOrCreate(world, savedData, adjX, adjZ, (byte) mapState.scale);
         if (newMapId < 0) {
             ExpansionFailedPayload.sendTo(player, payload.direction(),
                     ExpansionFailedPayload.Reason.NO_MAP_IN_OFFHAND);
@@ -97,8 +94,12 @@ public record RequestExpansionPayload(
 
         consumeResources(player, payload.highDetail());
 
-        savedData.addExpansion(world, mapId,
+        savedData.addExpansion(mapId,
                 new ExpansionRecord(payload.direction(), newMapId, payload.highDetail()));
+
+        if (payload.highDetail()) {
+            savedData.discoverAll(newMapId);
+        }
 
         ServerPlayNetworking.send(player,
                 new GrantExpansionPayload(payload.direction(), newMapId, payload.highDetail()));
@@ -125,6 +126,8 @@ public record RequestExpansionPayload(
     }
 
     private static void consumeResources(ServerPlayerEntity player, boolean highDetail) {
+        if (player.isCreative()) return;
+
         var inv  = player.getInventory();
         int cost = ExplorerMapConfig.get().expansionPaperCost;
 

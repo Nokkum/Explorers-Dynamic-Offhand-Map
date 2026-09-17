@@ -26,10 +26,7 @@ public record GrantExpansionPayload(
 
     public static final PacketCodec<PacketByteBuf, GrantExpansionPayload> CODEC =
             PacketCodec.tuple(
-                    PacketCodecs.STRING.xmap(
-                            ExpansionRecord.Direction::valueOf,
-                            ExpansionRecord.Direction::name
-                    ), GrantExpansionPayload::direction,
+                    ExpansionRecord.Direction.PACKET_CODEC, GrantExpansionPayload::direction,
                     PacketCodecs.VAR_INT,  GrantExpansionPayload::mapId,
                     PacketCodecs.BOOL,     GrantExpansionPayload::highDetail,
                     GrantExpansionPayload::new
@@ -58,7 +55,7 @@ public record GrantExpansionPayload(
         int mapId = MapIdentity.rawIdOf(offHand);
         if (mapId < 0) return;
 
-        var mapEntry = ClientMapCache.getOrCreate(mapState, mapId);
+        var mapEntry = ClientMapCache.getOrCreate(mapId);
         if (!mapEntry.hasExpansion(payload.direction())) {
             mapEntry.addExpansion(new ExpansionRecord(
                     payload.direction(), payload.mapId(), payload.highDetail()));

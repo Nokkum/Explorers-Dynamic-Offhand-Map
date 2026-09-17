@@ -31,4 +31,8 @@ public class ExplorerMapRegistry {
     public static java.util.Set<String> allIconIds() {
         return java.util.Collections.unmodifiableSet(WAYPOINT_ICONS.keySet());
     }
+
+    public static boolean isRegisteredIcon(String iconId) {
+        return WAYPOINT_ICONS.containsKey(iconId);
+    }
 }

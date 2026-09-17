@@ -43,7 +43,7 @@ public class ExplorationEngine {
 
         if (!DimensionMapTracker.isMapRelevantForCurrentDimension(player, mapState)) return;
 
-        MapEntryData mapEntry = ClientMapCache.getOrCreate(mapState, mapId);
+        MapEntryData mapEntry = ClientMapCache.getOrCreate(mapId);
 
         float yawDeg   = player.getYaw();
         float pitchDeg = player.getPitch();

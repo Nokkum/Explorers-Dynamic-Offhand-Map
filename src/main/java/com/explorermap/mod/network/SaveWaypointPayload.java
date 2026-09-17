@@ -13,15 +13,18 @@ import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 
-public record SaveWaypointPayload(int mapId, Waypoint waypoint) implements CustomPayload {
+public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypoint) implements CustomPayload {
+
+    private static final int MAX_NAME_LENGTH = 64;
 
     public static final CustomPayload.Id<SaveWaypointPayload> ID =
             new CustomPayload.Id<>(ExplorerMapRegistry.id("save_waypoint"));
 
     public static final PacketCodec<PacketByteBuf, SaveWaypointPayload> CODEC =
             PacketCodec.tuple(
-                    PacketCodecs.VAR_INT,                SaveWaypointPayload::mapId,
-                    PacketCodecs.codec(Waypoint.CODEC),  SaveWaypointPayload::waypoint,
+                    PacketCodecs.VAR_INT,                    SaveWaypointPayload::mapId,
+                    PacketCodecs.string(MAX_NAME_LENGTH),    SaveWaypointPayload::previousName,
+                    PacketCodecs.codec(Waypoint.CODEC),      SaveWaypointPayload::waypoint,
                     SaveWaypointPayload::new
             );
 
@@ -60,9 +63,19 @@ public record SaveWaypointPayload(int mapId, Waypoint waypoint) implements Custo
             return;
         }
 
+        String iconId = payload.waypoint().iconId();
+        if (!ExplorerMapRegistry.isRegisteredIcon(iconId)) {
+            ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: unknown iconId '{}' rejected from {}",
+                    iconId, player.getName().getString());
+            return;
+        }
+
         var savedData = ExplorerMapSavedData.get(player.getServer());
-        savedData.removeWaypoint(world, payload.mapId(), payload.waypoint().name());
-        savedData.addWaypoint(world, payload.mapId(), payload.waypoint());
+        if (!payload.previousName().isEmpty() && !payload.previousName().equals(payload.waypoint().name())) {
+            savedData.removeWaypoint(payload.mapId(), payload.previousName());
+        }
+        savedData.removeWaypoint(payload.mapId(), payload.waypoint().name());
+        savedData.addWaypoint(payload.mapId(), payload.waypoint());
 
         ExplorerMapMod.LOGGER.debug("[ExplorerMap] Saved waypoint '{}' on map #{}",
                 payload.waypoint().name(), payload.mapId());

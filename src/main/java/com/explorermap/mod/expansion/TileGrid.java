@@ -50,7 +50,7 @@ public final class TileGrid {
             MapState adjState = world.getMapState(new MapIdComponent(exp.mapId()));
             if (adjState == null) continue;
 
-            MapEntryData adjEntry = ClientMapCache.getOrCreate(adjState, exp.mapId());
+            MapEntryData adjEntry = ClientMapCache.getOrCreate(exp.mapId());
             grid.tiles.add(new TileEntry(exp.mapId(), adjState, adjEntry, gx, gz));
         }
 

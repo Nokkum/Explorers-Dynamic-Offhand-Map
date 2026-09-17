@@ -3,6 +3,7 @@ package com.explorermap.mod.network;
 import com.explorermap.mod.expansion.ExpansionRecord;
 import com.explorermap.mod.gui.ExpansionFeedback;
 import com.explorermap.mod.registry.ExplorerMapRegistry;
+import io.netty.handler.codec.DecoderException;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -10,7 +11,6 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 
@@ -23,8 +23,17 @@ public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason
         ALREADY_EXPANDED,
         NO_MAP_IN_OFFHAND;
 
-        static final PacketCodec<PacketByteBuf, Reason> CODEC =
-                PacketCodecs.STRING.xmap(Reason::valueOf, Reason::name);
+        static final PacketCodec<PacketByteBuf, Reason> PACKET_CODEC = PacketCodec.of(
+                (Reason value, PacketByteBuf buf) -> buf.writeString(value.name()),
+                (PacketByteBuf buf) -> {
+                    String raw = buf.readString();
+                    try {
+                        return Reason.valueOf(raw);
+                    } catch (IllegalArgumentException e) {
+                        throw new DecoderException("Invalid ExpansionFailedPayload.Reason: " + raw);
+                    }
+                }
+        );
     }
 
     public static final CustomPayload.Id<ExpansionFailedPayload> ID =
@@ -32,11 +41,8 @@ public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason
 
     public static final PacketCodec<PacketByteBuf, ExpansionFailedPayload> CODEC =
             PacketCodec.tuple(
-                    PacketCodecs.STRING.xmap(
-                            ExpansionRecord.Direction::valueOf,
-                            ExpansionRecord.Direction::name
-                    ), ExpansionFailedPayload::direction,
-                    Reason.CODEC, ExpansionFailedPayload::reason,
+                    ExpansionRecord.Direction.PACKET_CODEC, ExpansionFailedPayload::direction,
+                    Reason.PACKET_CODEC, ExpansionFailedPayload::reason,
                     ExpansionFailedPayload::new
             );
 
@@ -59,7 +65,6 @@ public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason
 
     @Environment(EnvType.CLIENT)
     private static void handleOnClient(ExpansionFailedPayload payload) {
-
         ExpansionFeedback.reportFailure(payload.direction(), payload.reason());
     }
 }

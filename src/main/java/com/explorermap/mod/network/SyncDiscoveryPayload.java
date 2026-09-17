@@ -60,13 +60,13 @@ public final class SyncDiscoveryPayload {
             if (mapState == null) return;
 
             var savedData = ExplorerMapSavedData.get(server);
-            boolean changed = savedData.mergeBitmask(world, payload.mapId(), payload.bitmask());
+            boolean changed = savedData.mergeBitmask(payload.mapId(), payload.bitmask());
             if (!changed) return;
 
             ExplorerMapMod.LOGGER.debug("[ExplorerMap] Merged discovery for map #{} from {}",
                     payload.mapId(), sender.getName().getString());
 
-            MapEntryData entry = savedData.getOrCreate(world, payload.mapId());
+            MapEntryData entry = savedData.getOrCreate(payload.mapId());
             StructureWaypointDetector.checkAndPlace(server, sender, payload.mapId(), mapState, savedData);
 
             byte[] merged = entry.getDiscoveredPixelsCopy();
@@ -113,7 +113,7 @@ public final class SyncDiscoveryPayload {
             var mapState = MapIdentity.stateOf(payload.mapId(), client.world);
             if (mapState == null) return;
 
-            var mapEntry = ClientMapCache.getOrCreate(mapState, payload.mapId());
+            var mapEntry = ClientMapCache.getOrCreate(payload.mapId());
             mapEntry.mergeBitmask(payload.bitmask());
         }
     }

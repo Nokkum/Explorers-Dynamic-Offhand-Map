@@ -1,6 +1,7 @@
 package com.explorermap.mod.expansion;
 
 import com.explorermap.mod.ExplorerMapMod;
+import com.explorermap.mod.config.ExplorerMapConfig;
 import com.explorermap.mod.data.ClientMapCache;
 import com.explorermap.mod.data.MapIdentity;
 import net.fabricmc.api.EnvType;
@@ -16,8 +17,18 @@ public final class ExpansionHandler {
     private ExpansionHandler() {}
 
     public static boolean canExpand(ClientPlayerEntity player, boolean highDetail) {
+        if (player.isCreative()) return true;
+
         var inv = player.getInventory();
-        if (!inv.contains(Items.PAPER.getDefaultStack())) return false;
+        int cost = ExplorerMapConfig.get().expansionPaperCost;
+
+        int paperHeld = 0;
+        for (int i = 0; i < inv.size(); i++) {
+            var slot = inv.getStack(i);
+            if (slot.isOf(Items.PAPER)) paperHeld += slot.getCount();
+        }
+        if (paperHeld < cost) return false;
+
         if (highDetail) {
             if (!inv.contains(Items.INK_SAC.getDefaultStack())) return false;
             if (!inv.contains(Items.COMPASS.getDefaultStack())) return false;
@@ -35,7 +46,7 @@ public final class ExpansionHandler {
         int mapId = MapIdentity.rawIdOf(offHand);
         if (mapId < 0) return false;
 
-        var entry = ClientMapCache.get(state, mapId);
+        var entry = ClientMapCache.get(mapId);
         return entry != null && entry.hasExpansion(direction);
     }
 }

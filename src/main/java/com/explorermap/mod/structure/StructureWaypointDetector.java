@@ -37,7 +37,7 @@ public final class StructureWaypointDetector {
         int minX = mapState.centerX - halfBlocks;
         int minZ = mapState.centerZ - halfBlocks;
 
-        var entry = savedData.getOrCreate(world, mapId);
+        var entry = savedData.getOrCreate(mapId);
         byte[] bitmask = entry.getDiscoveredPixelsCopy();
 
         Set<ChunkPos> discoveredChunks = new HashSet<>();
@@ -71,14 +71,14 @@ public final class StructureWaypointDetector {
                 double structX = (bb.getMinX() + bb.getMaxX()) / 2.0;
                 double structZ = (bb.getMinZ() + bb.getMaxZ()) / 2.0;
 
-                if (hasDuplicateWaypoint(savedData.getOrCreate(world, mapId), structX, structZ)) continue;
+                if (hasDuplicateWaypoint(savedData.getOrCreate(mapId), structX, structZ)) continue;
 
                 String iconId = iconForStructure(world, se.getKey());
                 String name   = nameForStructure(world, se.getKey());
                 int color     = colorForStructure(world, se.getKey());
 
                 Waypoint wp = new Waypoint(name, structX, structZ, iconId, color);
-                savedData.addWaypoint(world, mapId, wp);
+                savedData.addWaypoint(mapId, wp);
                 placedAny = true;
 
                 ExplorerMapMod.LOGGER.info(

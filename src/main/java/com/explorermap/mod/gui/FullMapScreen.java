@@ -47,7 +47,7 @@ public class FullMapScreen extends Screen {
         super(Text.translatable("screen.explorermap.full_map"));
     }
 
-    private int canvasSize() { return Math.min(BASE_CANVAS, Math.min(this.width, this.height) - 80); }
+    private int canvasSize() { return Math.max(120, Math.min(BASE_CANVAS, Math.min(this.width, this.height) - 80)); }
     private int canvasX()    { return (this.width  - canvasSize()) / 2; }
     private int canvasY()    { return (this.height - canvasSize()) / 2; }
 
@@ -190,7 +190,7 @@ public class FullMapScreen extends Screen {
         ctx.fill(cx, cy + size + 4, cx + size,               cy + size + 10, 0xFF222222);
         ctx.fill(cx, cy + size + 4, cx + (int) (size * frac), cy + size + 10, 0xFF44AA44);
         ctx.drawTextWithShadow(this.textRenderer,
-                String.format(Text.translatable("explorermap.hud.explored").getString(), frac * 100f),
+                Text.translatable("explorermap.hud.explored", String.format("%.1f", frac * 100f)),
                 cx + 2, cy + size + 13, 0xFF888888);
 
         if (client.player != null) {
@@ -319,7 +319,7 @@ public class FullMapScreen extends Screen {
         }
         mapId    = MapIdentity.rawIdOf(off);
         mapState = MapIdentity.stateOf(off, client.world);
-        mapEntry = (mapState != null && mapId >= 0) ? ClientMapCache.getOrCreate(mapState, mapId) : null;
+        mapEntry = (mapState != null && mapId >= 0) ? ClientMapCache.getOrCreate(mapId) : null;
     }
 
     @Override public boolean shouldPause() { return false; }

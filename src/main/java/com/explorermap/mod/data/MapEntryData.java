@@ -47,6 +47,17 @@ public final class MapEntryData {
         return false;
     }
 
+    public boolean discoverAll() {
+        boolean changed = false;
+        for (int i = 0; i < BYTE_COUNT; i++) {
+            byte before = discoveredPixels[i];
+            discoveredPixels[i] = (byte) 0xFF;
+            if (discoveredPixels[i] != before) changed = true;
+        }
+        if (changed) discoveryGeneration++;
+        return changed;
+    }
+
     public boolean isDiscovered(int col, int row) {
         if (col < 0 || col >= MAP_SIZE || row < 0 || row >= MAP_SIZE) return false;
         int bit = row * MAP_SIZE + col;

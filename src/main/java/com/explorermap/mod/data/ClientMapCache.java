@@ -2,7 +2,6 @@ package com.explorermap.mod.data;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.item.map.MapState;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -14,11 +13,11 @@ public final class ClientMapCache {
 
     private ClientMapCache() {}
 
-    public static MapEntryData getOrCreate(MapState state, int mapId) {
+    public static MapEntryData getOrCreate(int mapId) {
         return ENTRIES.computeIfAbsent(mapId, k -> new MapEntryData());
     }
 
-    public static MapEntryData get(MapState state, int mapId) {
+    public static MapEntryData get(int mapId) {
         return ENTRIES.get(mapId);
     }
 

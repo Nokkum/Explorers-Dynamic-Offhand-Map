@@ -41,7 +41,7 @@ public record DeleteWaypointPayload(int mapId, String waypointName) implements C
         if (mapState == null) return;
 
         var savedData = ExplorerMapSavedData.get(player.getServer());
-        savedData.removeWaypoint(world, payload.mapId(), payload.waypointName());
+        savedData.removeWaypoint(payload.mapId(), payload.waypointName());
 
         ExplorerMapMod.LOGGER.debug("[ExplorerMap] Deleted waypoint '{}' from map #{}",
                 payload.waypointName(), payload.mapId());

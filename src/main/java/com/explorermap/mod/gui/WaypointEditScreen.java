@@ -81,11 +81,25 @@ public class WaypointEditScreen extends Screen {
             }
         }
 
-        dlgW = 280; dlgH = 200;
+        dlgW = 280;
+        int pad = 12;
+
+        int cols = Math.max(1, (dlgW - pad * 2 + ICON_GAP) / (ICON_CELL + ICON_GAP));
+        int iconRows = (iconIds.size() + cols - 1) / Math.max(1, cols);
+
+        int colorCols = Math.max(1, (dlgW - pad * 2 + SWATCH_GAP) / (SWATCH_SIZE + SWATCH_GAP));
+        int colorRows = (COLORS.length + colorCols - 1) / Math.max(1, colorCols);
+
+        int contentHeight = pad + 14 + 28
+                + iconRows * (ICON_CELL + ICON_GAP)
+                + 10
+                + colorRows * (SWATCH_SIZE + SWATCH_GAP)
+                + 10 + ICON_CELL
+                + 28 + pad;
+
+        dlgH = Math.max(200, contentHeight);
         dlgX = (this.width  - dlgW) / 2;
         dlgY = (this.height - dlgH) / 2;
-
-        int pad = 12;
 
         int fieldY = dlgY + pad + 14;
         nameField = new TextFieldWidget(this.textRenderer,
@@ -99,7 +113,6 @@ public class WaypointEditScreen extends Screen {
         iconGridY = fieldY + 28;
         iconGridX = dlgX + pad;
 
-        int cols = Math.max(1, (dlgW - pad * 2 + ICON_GAP) / (ICON_CELL + ICON_GAP));
         for (int i = 0; i < iconIds.size(); i++) {
             final int idx = i;
             int col = i % cols, row = i / cols;
@@ -109,12 +122,10 @@ public class WaypointEditScreen extends Screen {
                     btn -> selectedIconIndex = idx)
                     .dimensions(bx, by, ICON_CELL, ICON_CELL).build());
         }
-        int iconRows = (iconIds.size() + cols - 1) / Math.max(1, cols);
 
         colorGridY = iconGridY + iconRows * (ICON_CELL + ICON_GAP) + 10;
         colorGridX = dlgX + pad;
 
-        int colorCols = Math.max(1, (dlgW - pad * 2 + SWATCH_GAP) / (SWATCH_SIZE + SWATCH_GAP));
         for (int i = 0; i < COLORS.length; i++) {
             final int idx = i;
             int col = i % colorCols, row = i / colorCols;
@@ -124,7 +135,6 @@ public class WaypointEditScreen extends Screen {
                     btn -> selectedColorIndex = idx)
                     .dimensions(bx, by, SWATCH_SIZE, SWATCH_SIZE).build());
         }
-        int colorRows = (COLORS.length + colorCols - 1) / Math.max(1, colorCols);
 
         previewY = colorGridY + colorRows * (SWATCH_SIZE + SWATCH_GAP) + 10;
         previewX = dlgX + pad;
@@ -196,7 +206,10 @@ public class WaypointEditScreen extends Screen {
         if (client == null || client.player == null) return;
 
         String name = nameField.getText().trim();
-        if (name.isEmpty()) name = Text.translatable("explorermap.waypoint.default_name").getString();
+        if (name.isEmpty()) {
+            name = Text.translatable("explorermap.waypoint.default_name").getString()
+                    + " (" + (int) client.player.getX() + ", " + (int) client.player.getZ() + ")";
+        }
 
         String iconId = iconIds.isEmpty() ? Waypoint.DEFAULT_ICON : iconIds.get(selectedIconIndex);
         int color = COLORS[selectedColorIndex];
@@ -221,14 +234,16 @@ public class WaypointEditScreen extends Screen {
         int mapId = MapIdentity.rawIdOf(offHand);
         if (mapId < 0) { client.setScreen(parent); return; }
 
+        String previousName = editingWaypoint != null ? editingWaypoint.name() : "";
+
         var mapState = MapIdentity.stateOf(offHand, client.world);
         if (mapState != null) {
-            var mapEntry = ClientMapCache.getOrCreate(mapState, mapId);
+            var mapEntry = ClientMapCache.getOrCreate(mapId);
             if (editingWaypoint != null) mapEntry.removeWaypoint(editingWaypoint.name());
             mapEntry.addWaypoint(wp);
         }
 
-        ClientPlayNetworking.send(new SaveWaypointPayload(mapId, wp));
+        ClientPlayNetworking.send(new SaveWaypointPayload(mapId, previousName, wp));
 
         client.setScreen(parent);
     }

@@ -42,7 +42,7 @@ public class MinimapHud {
 
         if (!DimensionMapTracker.isMapRelevantForCurrentDimension(player, mapState)) return;
 
-        MapEntryData mapEntry = ClientMapCache.getOrCreate(mapState, mapId);
+        MapEntryData mapEntry = ClientMapCache.getOrCreate(mapId);
 
         int size    = cfg.mapSize;
         int padding = cfg.padding;

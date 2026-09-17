@@ -45,8 +45,7 @@ public record SyncWaypointsPayload(
     public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
 
     public static void sendTo(ServerPlayerEntity player, int mapId) {
-        var world = player.getServerWorld();
-        var entry = ExplorerMapSavedData.get(player.getServer()).get(world, mapId);
+        var entry = ExplorerMapSavedData.get(player.getServer()).get(mapId);
         List<Waypoint> waypoints = entry != null ? entry.getWaypoints() : List.of();
         ServerPlayNetworking.send(player, new SyncWaypointsPayload(mapId, waypoints));
     }
@@ -81,7 +80,7 @@ public record SyncWaypointsPayload(
         var mapState = MapIdentity.stateOf(payload.mapId(), client.world);
         if (mapState == null) return;
 
-        var mapEntry = ClientMapCache.getOrCreate(mapState, payload.mapId());
+        var mapEntry = ClientMapCache.getOrCreate(payload.mapId());
         mapEntry.replaceAllWaypoints(payload.waypoints());
 
         ExplorerMapMod.LOGGER.debug("[ExplorerMap] Synced {} waypoints for map #{}",
