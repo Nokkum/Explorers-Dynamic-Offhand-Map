@@ -3,6 +3,8 @@ package com.explorermap.mod.gui;
 import com.explorermap.mod.ExplorerMapMod;
 import com.explorermap.mod.data.ClientMapCache;
 import com.explorermap.mod.data.MapIdentity;
+import com.explorermap.mod.expansion.MultiTileCanvas;
+import com.explorermap.mod.expansion.TileGrid;
 import com.explorermap.mod.hud.WaypointIconRenderer;
 import com.explorermap.mod.registry.ExplorerMapRegistry;
 import com.explorermap.mod.waypoint.Waypoint;
@@ -46,6 +48,7 @@ public class WaypointEditScreen extends Screen {
 
     private final Screen parent;
     private final Waypoint editingWaypoint;
+    private final int editingMapId;
 
     private TextFieldWidget nameField;
     private List<String>    iconIds = new ArrayList<>();
@@ -58,13 +61,18 @@ public class WaypointEditScreen extends Screen {
     private int previewX, previewY;
 
     public WaypointEditScreen(Screen parent) {
-        this(parent, null);
+        this(parent, null, -1);
     }
 
     public WaypointEditScreen(Screen parent, Waypoint existing) {
+        this(parent, existing, -1);
+    }
+
+    public WaypointEditScreen(Screen parent, Waypoint existing, int owningMapId) {
         super(Text.translatable("screen.explorermap.waypoint_edit"));
         this.parent          = parent;
         this.editingWaypoint = existing;
+        this.editingMapId    = owningMapId;
     }
 
     @Override
@@ -225,23 +233,33 @@ public class WaypointEditScreen extends Screen {
 
         Waypoint wp = new Waypoint(name, wx, wz, iconId, color);
 
-        var offHand = client.player.getStackInHand(Hand.OFF_HAND);
-        if (!ExplorerMapMod.isFilledMap(offHand) || client.world == null) {
-            client.setScreen(parent);
-            return;
-        }
+        int mapId;
+        if (editingWaypoint != null && editingMapId >= 0) {
+            mapId = editingMapId;
+        } else {
+            var offHand = client.player.getStackInHand(Hand.OFF_HAND);
+            if (!ExplorerMapMod.isFilledMap(offHand) || client.world == null) {
+                client.setScreen(parent);
+                return;
+            }
+            int rootMapId = MapIdentity.rawIdOf(offHand);
+            if (rootMapId < 0) { client.setScreen(parent); return; }
+            var rootMapState = MapIdentity.stateOf(offHand, client.world);
+            if (rootMapState == null) { client.setScreen(parent); return; }
 
-        int mapId = MapIdentity.rawIdOf(offHand);
+            var rootEntry = ClientMapCache.getOrCreate(rootMapId);
+            var grid = TileGrid.build(rootMapId, rootMapState, rootEntry, client.world);
+            var canvas = MultiTileCanvas.from(grid, rootMapState);
+            var owningTile = grid.findTileContaining(canvas, wx, wz);
+            mapId = owningTile != null ? owningTile.mapId() : rootMapId;
+        }
         if (mapId < 0) { client.setScreen(parent); return; }
 
         String previousName = editingWaypoint != null ? editingWaypoint.name() : "";
 
-        var mapState = MapIdentity.stateOf(offHand, client.world);
-        if (mapState != null) {
-            var mapEntry = ClientMapCache.getOrCreate(mapId);
-            if (editingWaypoint != null) mapEntry.removeWaypoint(editingWaypoint.name());
-            mapEntry.addWaypoint(wp);
-        }
+        var mapEntry = ClientMapCache.getOrCreate(mapId);
+        if (editingWaypoint != null) mapEntry.removeWaypoint(editingWaypoint.name());
+        mapEntry.addWaypoint(wp);
 
         ClientPlayNetworking.send(new SaveWaypointPayload(mapId, previousName, wp));
 

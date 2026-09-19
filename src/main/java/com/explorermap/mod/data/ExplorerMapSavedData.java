@@ -68,6 +68,16 @@ public class ExplorerMapSavedData extends PersistentState {
         return changed;
     }
 
+    public boolean isAccessibleFrom(int heldRootId, int targetMapId) {
+        if (heldRootId == targetMapId) return true;
+        var rootEntry = get(heldRootId);
+        if (rootEntry == null) return false;
+        for (ExpansionRecord record : rootEntry.getExpansions()) {
+            if (record.mapId() == targetMapId) return true;
+        }
+        return false;
+    }
+
     public record TileKey(String dimension, int scale, int centerX, int centerZ) {
         static final Codec<TileKey> CODEC = RecordCodecBuilder.create(instance ->
                 instance.group(

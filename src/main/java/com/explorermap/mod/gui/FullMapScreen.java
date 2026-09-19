@@ -41,6 +41,7 @@ public class FullMapScreen extends Screen {
     boolean hdMode = false;
 
     private Waypoint contextMenuWaypoint;
+    private int contextMenuMapId = -1;
     private int contextMenuX, contextMenuY;
 
     public FullMapScreen() {
@@ -135,7 +136,7 @@ public class FullMapScreen extends Screen {
             MultiTileCanvas canvas = MultiTileCanvas.from(grid, mapState);
             int originX = canvas.defaultScreenOriginX(cx + size / 2, zoom, panX);
             int originY = canvas.defaultScreenOriginY(cy + size / 2, zoom, panY);
-            renderWaypoints(context, canvas, originX, originY, zoom);
+            renderWaypoints(context, grid, canvas, originX, originY, zoom);
         }
 
         context.disableScissor();
@@ -163,17 +164,19 @@ public class FullMapScreen extends Screen {
         super.render(context, mouseX, mouseY, delta);
     }
 
-    private void renderWaypoints(DrawContext ctx, MultiTileCanvas canvas,
+    private void renderWaypoints(DrawContext ctx, TileGrid grid, MultiTileCanvas canvas,
                                   int originX, int originY, float zoom) {
-        if (mapEntry == null) return;
         int iconSize = Math.min(16, Math.max(6, (int) (WaypointIconRenderer.MAP_ICON_SIZE * zoom)));
         boolean showLabels = zoom >= 0.75f;
-        for (Waypoint wp : mapEntry.getWaypoints()) {
-            int cpx = canvas.worldToCanvasX(wp.worldX());
-            int cpz = canvas.worldToCanvasZ(wp.worldZ());
-            int sx  = originX + Math.round(cpx * zoom);
-            int sy  = originY + Math.round(cpz * zoom);
-            WaypointIconRenderer.drawOnMap(ctx, wp, sx, sy, iconSize, showLabels);
+        for (TileGrid.TileEntry tile : grid.tiles()) {
+            for (Waypoint wp : tile.entry().getWaypoints()) {
+                if (!grid.isWorldPositionDiscovered(canvas, wp.worldX(), wp.worldZ())) continue;
+                int cpx = canvas.worldToCanvasX(wp.worldX());
+                int cpz = canvas.worldToCanvasZ(wp.worldZ());
+                int sx  = originX + Math.round(cpx * zoom);
+                int sy  = originY + Math.round(cpz * zoom);
+                WaypointIconRenderer.drawOnMap(ctx, wp, sx, sy, iconSize, showLabels);
+            }
         }
     }
 
@@ -209,9 +212,10 @@ public class FullMapScreen extends Screen {
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
         if (button == 1) {
-            Waypoint hit = findWaypointNear(mx, my);
+            WaypointHit hit = findWaypointNear(mx, my);
             if (hit != null) {
-                contextMenuWaypoint = hit;
+                contextMenuWaypoint = hit.waypoint();
+                contextMenuMapId = hit.mapId();
                 contextMenuX = (int) mx;
                 contextMenuY = (int) my;
                 rebuildContextMenuButtons();
@@ -227,7 +231,9 @@ public class FullMapScreen extends Screen {
         return super.mouseClicked(mx, my, button);
     }
 
-    private Waypoint findWaypointNear(double mx, double my) {
+    private record WaypointHit(Waypoint waypoint, int mapId) {}
+
+    private WaypointHit findWaypointNear(double mx, double my) {
         if (mapEntry == null || mapState == null || client == null || client.world == null) return null;
 
         TileGrid grid = TileGrid.build(mapId, mapState, mapEntry, client.world);
@@ -237,13 +243,16 @@ public class FullMapScreen extends Screen {
         int originY = canvas.defaultScreenOriginY(cy + size / 2, zoom, panY);
 
         final int HIT_RADIUS = 8;
-        for (Waypoint wp : mapEntry.getWaypoints()) {
-            int cpx = canvas.worldToCanvasX(wp.worldX());
-            int cpz = canvas.worldToCanvasZ(wp.worldZ());
-            int sx  = originX + Math.round(cpx * zoom);
-            int sy  = originY + Math.round(cpz * zoom);
-            double dist = Math.hypot(mx - sx, my - sy);
-            if (dist <= HIT_RADIUS) return wp;
+        for (TileGrid.TileEntry tile : grid.tiles()) {
+            for (Waypoint wp : tile.entry().getWaypoints()) {
+                if (!grid.isWorldPositionDiscovered(canvas, wp.worldX(), wp.worldZ())) continue;
+                int cpx = canvas.worldToCanvasX(wp.worldX());
+                int cpz = canvas.worldToCanvasZ(wp.worldZ());
+                int sx  = originX + Math.round(cpx * zoom);
+                int sy  = originY + Math.round(cpz * zoom);
+                double dist = Math.hypot(mx - sx, my - sy);
+                if (dist <= HIT_RADIUS) return new WaypointHit(wp, tile.mapId());
+            }
         }
         return null;
     }
@@ -258,34 +267,37 @@ public class FullMapScreen extends Screen {
                 Text.translatable("label.explorermap.edit_waypoint"),
                 b -> {
                     Waypoint toEdit = contextMenuWaypoint;
+                    int owningMapId = contextMenuMapId;
                     closeContextMenu();
-                    if (client != null) client.setScreen(new WaypointEditScreen(this, toEdit));
+                    if (client != null) client.setScreen(new WaypointEditScreen(this, toEdit, owningMapId));
                 }
         ).dimensions(contextMenuX, contextMenuY, 90, 18).build());
 
         addDrawableChild(ButtonWidget.builder(
                 Text.translatable("label.explorermap.delete_waypoint"),
                 b -> {
-                    deleteWaypoint(contextMenuWaypoint);
+                    deleteWaypoint(contextMenuWaypoint, contextMenuMapId);
                     closeContextMenu();
                 }
         ).dimensions(contextMenuX, contextMenuY + 20, 90, 18).build());
     }
 
-    private void deleteWaypoint(Waypoint wp) {
-        if (client == null || client.player == null || mapEntry == null || mapId < 0) return;
+    private void deleteWaypoint(Waypoint wp, int owningMapId) {
+        if (client == null || client.player == null || owningMapId < 0) return;
 
-        mapEntry.removeWaypoint(wp.name());
+        var entry = ClientMapCache.get(owningMapId);
+        if (entry != null) entry.removeWaypoint(wp.name());
 
         ItemStack offHand = client.player.getStackInHand(Hand.OFF_HAND);
         if (ExplorerMapMod.isFilledMap(offHand)) {
-            ClientPlayNetworking.send(new DeleteWaypointPayload(mapId, wp.name()));
+            ClientPlayNetworking.send(new DeleteWaypointPayload(owningMapId, wp.name()));
         }
     }
 
     private void closeContextMenu() {
         if (contextMenuWaypoint != null) {
             contextMenuWaypoint = null;
+            contextMenuMapId = -1;
             this.clearChildren();
             this.init();
         }

@@ -6,6 +6,8 @@ import com.explorermap.mod.data.ClientMapCache;
 import com.explorermap.mod.data.MapEntryData;
 import com.explorermap.mod.data.MapIdentity;
 import com.explorermap.mod.dimension.DimensionMapTracker;
+import com.explorermap.mod.expansion.MultiTileCanvas;
+import com.explorermap.mod.expansion.TileGrid;
 import com.explorermap.mod.network.SyncDiscoveryPayload;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -44,13 +46,15 @@ public class ExplorationEngine {
         if (!DimensionMapTracker.isMapRelevantForCurrentDimension(player, mapState)) return;
 
         MapEntryData mapEntry = ClientMapCache.getOrCreate(mapId);
+        TileGrid grid = TileGrid.build(mapId, mapState, mapEntry, client.world);
+        MultiTileCanvas canvas = MultiTileCanvas.from(grid, mapState);
 
         float yawDeg   = player.getYaw();
         float pitchDeg = player.getPitch();
         float fovDeg   = (float) client.options.getFov().getValue();
 
         if (cfg.fogOfDiscovery) {
-            castRays(player, mapState, mapEntry, yawDeg, pitchDeg, fovDeg, cfg.rayCount);
+            castRays(player, mapState, grid, canvas, yawDeg, pitchDeg, fovDeg, cfg.rayCount);
         } else if (mapEntry.discoveryFraction() < 1f) {
             markAllPixels(mapEntry);
         }
@@ -71,7 +75,8 @@ public class ExplorationEngine {
 
     private static void castRays(ClientPlayerEntity player,
                                   MapState mapState,
-                                  MapEntryData mapEntry,
+                                  TileGrid grid,
+                                  MultiTileCanvas canvas,
                                   float yawDeg, float pitchDeg, float fovDeg,
                                   int hRays) {
 
@@ -88,18 +93,16 @@ public class ExplorationEngine {
                 float yaw = yawDeg - halfFov + t * fovDeg;
 
                 Vec3d dir = directionFromAngles(yaw, pitch);
-                markRayOnMap(origin, dir, mapState, mapEntry);
+                markRayAcrossTiles(origin, dir, mapState, grid, canvas);
             }
         }
     }
 
-    private static void markRayOnMap(Vec3d origin, Vec3d dir,
-                                      MapState mapState,
-                                      MapEntryData mapEntry) {
-        int scale      = 1 << mapState.scale;
-        int mapCenterX = mapState.centerX;
-        int mapCenterZ = mapState.centerZ;
-
+    private static void markRayAcrossTiles(Vec3d origin, Vec3d dir,
+                                            MapState mapState,
+                                            TileGrid grid,
+                                            MultiTileCanvas canvas) {
+        int scale = 1 << mapState.scale;
         double stepSize = Math.max(scale, 2.0);
         double x = origin.x;
         double z = origin.z;
@@ -108,12 +111,15 @@ public class ExplorationEngine {
             x += dir.x * stepSize;
             z += dir.z * stepSize;
 
-            int col = worldToPixel(x, mapCenterX, scale);
-            int row = worldToPixel(z, mapCenterZ, scale);
+            TileGrid.TileEntry owner = grid.findTileContaining(canvas, x, z);
+            if (owner == null) break;
 
-            if (col < 0 || col >= 128 || row < 0 || row >= 128) break;
+            int canvasX = canvas.worldToCanvasX(x);
+            int canvasZ = canvas.worldToCanvasZ(z);
+            int localCol = canvasX - canvas.tileCanvasX(owner.gridX());
+            int localRow = canvasZ - canvas.tileCanvasZ(owner.gridZ());
 
-            mapEntry.discover(col, row);
+            owner.entry().discover(localCol, localRow);
         }
     }
 
@@ -126,12 +132,5 @@ public class ExplorationEngine {
                  MathHelper.sin(-pitch),
                   MathHelper.cos(yaw) * cosP
         );
-    }
-
-    private static int worldToPixel(double world, int mapCenter, int scale) {
-        int halfBlocks = 64 * scale;
-        double relative = world - (mapCenter - halfBlocks);
-        int pixel = (int) (relative / scale);
-        return (pixel >= 0 && pixel < 128) ? pixel : -1;
     }
 }

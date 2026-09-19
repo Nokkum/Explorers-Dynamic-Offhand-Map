@@ -4,8 +4,8 @@
   "version": "${version}",
   "name": "Explorer's Dynamic Off-Hand Map",
   "description": "Camera-based fog-of-discovery mini-map HUD. Hold a filled map in your off-hand to reveal the world as you look at it.",
-  "authors": ["Nokkum"],
-  "license": "Apache 2.0",
+  "authors": ["YourNameHere"],
+  "license": "MIT",
   "icon": "assets/explorermap/icon.png",
 
   "environment": "*",

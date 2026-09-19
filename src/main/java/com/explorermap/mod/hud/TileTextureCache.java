@@ -5,8 +5,8 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.block.MapColor;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.texture.DynamicTexture;
 import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.item.map.MapState;
 import net.minecraft.util.Identifier;
 
@@ -94,7 +94,7 @@ public final class TileTextureCache {
         }
 
         if (entry.texture == null) {
-            entry.texture    = new NativeImageBackedTexture(target);
+            entry.texture    = new DynamicTexture(target);
             entry.identifier = tm.registerDynamicTexture("explorermap/tile/" + entry.slot, entry.texture);
         } else {
             entry.texture.upload();
@@ -113,7 +113,7 @@ public final class TileTextureCache {
     private static final class Entry {
         final int slot;
         long generation = Long.MIN_VALUE;
-        NativeImageBackedTexture texture;
+        DynamicTexture texture;
         Identifier identifier;
 
         Entry(int slot) { this.slot = slot; }

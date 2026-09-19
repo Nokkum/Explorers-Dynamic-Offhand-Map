@@ -2,6 +2,7 @@ package com.explorermap.mod.network;
 
 import com.explorermap.mod.ExplorerMapMod;
 import com.explorermap.mod.data.ExplorerMapSavedData;
+import com.explorermap.mod.data.MapIdentity;
 import com.explorermap.mod.registry.ExplorerMapRegistry;
 import com.explorermap.mod.waypoint.Waypoint;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -12,6 +13,7 @@ import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.Hand;
 
 public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypoint) implements CustomPayload {
 
@@ -38,6 +40,24 @@ public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypo
     }
 
     private static void handleOnServer(ServerPlayerEntity player, SaveWaypointPayload payload) {
+        var offHand = player.getStackInHand(Hand.OFF_HAND);
+        if (!ExplorerMapMod.isFilledMap(offHand)) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] SaveWaypoint: rejected from {} - no map in off-hand",
+                    player.getName().getString());
+            return;
+        }
+
+        int heldRootId = MapIdentity.rawIdOf(offHand);
+        var savedData  = ExplorerMapSavedData.get(player.getServer());
+
+        if (!savedData.isAccessibleFrom(heldRootId, payload.mapId())) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] SaveWaypoint: rejected from {} - map #{} is not the held map or a known expansion of it",
+                    player.getName().getString(), payload.mapId());
+            return;
+        }
+
         var world    = player.getServerWorld();
         var mapState = world.getMapState(new MapIdComponent(payload.mapId()));
 
@@ -70,7 +90,6 @@ public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypo
             return;
         }
 
-        var savedData = ExplorerMapSavedData.get(player.getServer());
         if (!payload.previousName().isEmpty() && !payload.previousName().equals(payload.waypoint().name())) {
             savedData.removeWaypoint(payload.mapId(), payload.previousName());
         }

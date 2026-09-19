@@ -32,6 +32,32 @@ public final class TileGrid {
         return false;
     }
 
+    public boolean isWorldPositionDiscovered(MultiTileCanvas canvas, double worldX, double worldZ) {
+        TileEntry owner = findTileContaining(canvas, worldX, worldZ);
+        if (owner == null) return false;
+        int canvasX = canvas.worldToCanvasX(worldX);
+        int canvasZ = canvas.worldToCanvasZ(worldZ);
+        int localCol = canvasX - canvas.tileCanvasX(owner.gridX());
+        int localRow = canvasZ - canvas.tileCanvasZ(owner.gridZ());
+        return owner.entry().isDiscovered(localCol, localRow);
+    }
+
+    public TileEntry findTileContaining(MultiTileCanvas canvas, double worldX, double worldZ) {
+        int canvasX = canvas.worldToCanvasX(worldX);
+        int canvasZ = canvas.worldToCanvasZ(worldZ);
+
+        for (TileEntry t : tiles) {
+            int tileOriginX = canvas.tileCanvasX(t.gridX());
+            int tileOriginZ = canvas.tileCanvasZ(t.gridZ());
+            int localCol = canvasX - tileOriginX;
+            int localRow = canvasZ - tileOriginZ;
+            if (localCol >= 0 && localCol < 128 && localRow >= 0 && localRow < 128) {
+                return t;
+            }
+        }
+        return null;
+    }
+
     public static TileGrid build(int rootMapId, MapState rootState, MapEntryData rootEntry, ClientWorld world) {
         TileGrid grid = new TileGrid();
         grid.tiles.add(new TileEntry(rootMapId, rootState, rootEntry, 0, 0));

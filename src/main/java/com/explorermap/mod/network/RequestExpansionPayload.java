@@ -106,6 +106,8 @@ public record RequestExpansionPayload(
     }
 
     private static ExpansionFailedPayload.Reason checkResources(ServerPlayerEntity player, boolean highDetail) {
+        if (player.isCreative()) return null;
+
         var inv  = player.getInventory();
         int cost = ExplorerMapConfig.get().expansionPaperCost;
 

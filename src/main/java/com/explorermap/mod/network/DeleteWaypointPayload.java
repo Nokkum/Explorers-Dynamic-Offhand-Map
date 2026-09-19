@@ -2,6 +2,7 @@ package com.explorermap.mod.network;
 
 import com.explorermap.mod.ExplorerMapMod;
 import com.explorermap.mod.data.ExplorerMapSavedData;
+import com.explorermap.mod.data.MapIdentity;
 import com.explorermap.mod.registry.ExplorerMapRegistry;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -11,6 +12,7 @@ import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.Hand;
 
 public record DeleteWaypointPayload(int mapId, String waypointName) implements CustomPayload {
 
@@ -36,11 +38,28 @@ public record DeleteWaypointPayload(int mapId, String waypointName) implements C
     }
 
     private static void handleOnServer(ServerPlayerEntity player, DeleteWaypointPayload payload) {
+        var offHand = player.getStackInHand(Hand.OFF_HAND);
+        if (!ExplorerMapMod.isFilledMap(offHand)) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] DeleteWaypoint: rejected from {} - no map in off-hand",
+                    player.getName().getString());
+            return;
+        }
+
+        int heldRootId = MapIdentity.rawIdOf(offHand);
+        var savedData  = ExplorerMapSavedData.get(player.getServer());
+
+        if (!savedData.isAccessibleFrom(heldRootId, payload.mapId())) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] DeleteWaypoint: rejected from {} - map #{} is not the held map or a known expansion of it",
+                    player.getName().getString(), payload.mapId());
+            return;
+        }
+
         var world    = player.getServerWorld();
         var mapState = world.getMapState(new MapIdComponent(payload.mapId()));
         if (mapState == null) return;
 
-        var savedData = ExplorerMapSavedData.get(player.getServer());
         savedData.removeWaypoint(payload.mapId(), payload.waypointName());
 
         ExplorerMapMod.LOGGER.debug("[ExplorerMap] Deleted waypoint '{}' from map #{}",

@@ -7,7 +7,9 @@ import com.explorermap.mod.data.MapEntryData;
 import com.explorermap.mod.data.MapIdentity;
 import com.explorermap.mod.dimension.DimensionMapTracker;
 import com.explorermap.mod.expansion.ExpansionRecord;
+import com.explorermap.mod.expansion.MultiTileCanvas;
 import com.explorermap.mod.expansion.TileGrid;
+import com.explorermap.mod.waypoint.Waypoint;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.MinecraftClient;
@@ -66,6 +68,8 @@ public class MinimapHud {
                 boxX, boxY, size,
                 player.getX(), player.getZ(), player.getYaw());
 
+        renderWaypoints(context, grid, mapState, boxX, boxY, size);
+
         if (cfg.showCompass) {
             renderCompass(context, boxX + size - 18, boxY + 2);
         }
@@ -78,6 +82,28 @@ public class MinimapHud {
 
         context.drawBorder(boxX - 2, boxY - 2, size + 4, size + 4,
                 ((int) (cfg.opacity() * 180) << 24) | 0x888888);
+    }
+
+    private static void renderWaypoints(DrawContext ctx, TileGrid grid, MapState rootState,
+                                         int boxX, int boxY, int size) {
+        MultiTileCanvas canvas = MultiTileCanvas.from(grid, rootState);
+        int tileSize = canvas.hudRenderedTileSize(size);
+        int originX  = canvas.hudScreenOriginX(boxX, size);
+        int originY  = canvas.hudScreenOriginY(boxY, size);
+        float pixSize = tileSize / 128f;
+
+        ctx.enableScissor(boxX, boxY, boxX + size, boxY + size);
+        for (TileGrid.TileEntry tile : grid.tiles()) {
+            for (Waypoint wp : tile.entry().getWaypoints()) {
+                if (!grid.isWorldPositionDiscovered(canvas, wp.worldX(), wp.worldZ())) continue;
+                int cpx = canvas.worldToCanvasX(wp.worldX());
+                int cpz = canvas.worldToCanvasZ(wp.worldZ());
+                int sx  = originX + Math.round(cpx * pixSize);
+                int sy  = originY + Math.round(cpz * pixSize);
+                WaypointIconRenderer.drawOnMap(ctx, wp, sx, sy, WaypointIconRenderer.HUD_ICON_SIZE, false);
+            }
+        }
+        ctx.disableScissor();
     }
 
     private static void renderCompass(DrawContext ctx, int x, int y) {
