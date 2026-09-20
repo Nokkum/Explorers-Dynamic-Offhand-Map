@@ -67,6 +67,19 @@ public class ExplorerMapConfig implements ConfigData {
     @ConfigEntry.Gui.Tooltip
     public boolean showCompass = true;
 
+    @ConfigEntry.Gui.Tooltip
+    public boolean showCoordinates = true;
+
+    @ConfigEntry.Gui.Tooltip
+    public boolean showGridLines = false;
+
+    @ConfigEntry.Gui.Tooltip
+    public GridSpacing gridSpacing = GridSpacing.CHUNK;
+
+    public enum GridSpacing {
+        CHUNK, FOUR_CHUNKS
+    }
+
     public enum Corner {
         TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT
     }

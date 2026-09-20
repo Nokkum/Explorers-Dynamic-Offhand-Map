@@ -37,8 +37,11 @@ public class FullMapScreen extends Screen {
     float panX = 0f, panY = 0f;
     private boolean dragging = false;
     private double dragStartX, dragStartY;
+    private double clickStartX, clickStartY;
     private float panStartX, panStartY;
     boolean hdMode = false;
+    private String coordinatePopup;
+    private long coordinatePopupUntil;
 
     private Waypoint contextMenuWaypoint;
     private int contextMenuMapId = -1;
@@ -143,6 +146,7 @@ public class FullMapScreen extends Screen {
 
         renderCompass(context, cx + size - 26, cy + 6);
         renderProgressBar(context, cx, cy, size);
+        renderCoordinatePopup(context);
 
         if (hdMode) {
             String hdLabel = Text.translatable("explorermap.expansion.hd_cost").getString();
@@ -197,10 +201,22 @@ public class FullMapScreen extends Screen {
                 cx + 2, cy + size + 13, 0xFF888888);
 
         if (client.player != null) {
-            String pos = String.format("X %.0f  Z %.0f", client.player.getX(), client.player.getZ());
+            String pos = String.format("X %.0f  Y %.0f  Z %.0f",
+                    client.player.getX(), client.player.getY(), client.player.getZ());
             ctx.drawTextWithShadow(this.textRenderer, pos,
                     cx + size - this.textRenderer.getWidth(pos) - 2, cy + size + 13, 0xFF888888);
         }
+    }
+
+    private void renderCoordinatePopup(DrawContext ctx) {
+        if (coordinatePopup == null || System.currentTimeMillis() >= coordinatePopupUntil) return;
+        int width = this.textRenderer.getWidth(coordinatePopup) + 16;
+        int x = (this.width - width) / 2;
+        int y = canvasY() + 8;
+        ctx.fill(x, y, x + width, y + 22, 0xDD111111);
+        ctx.drawBorder(x, y, width, 22, 0xFFAAAAAA);
+        ctx.drawCenteredTextWithShadow(this.textRenderer, coordinatePopup,
+                x + width / 2, y + 7, 0xFFFFFFFF);
     }
 
     @Override
@@ -226,7 +242,11 @@ public class FullMapScreen extends Screen {
         }
         if (button == 0) {
             closeContextMenu();
-            dragging = true; dragStartX = mx; dragStartY = my; panStartX = panX; panStartY = panY;
+            dragging = true;
+            dragStartX = clickStartX = mx;
+            dragStartY = clickStartY = my;
+            panStartX = panX;
+            panStartY = panY;
         }
         return super.mouseClicked(mx, my, button);
     }
@@ -311,8 +331,34 @@ public class FullMapScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mx, double my, int button) {
-        if (button == 0) dragging = false;
+        if (button == 0) {
+            if (dragging && Math.hypot(mx - clickStartX, my - clickStartY) < 4.0) {
+                showCoordinatePopup(mx, my);
+            }
+            dragging = false;
+        }
         return super.mouseReleased(mx, my, button);
+    }
+
+    private void showCoordinatePopup(double mouseX, double mouseY) {
+        if (mapState == null || mapEntry == null || client == null || client.world == null) return;
+        int cx = canvasX(), cy = canvasY(), size = canvasSize();
+        if (mouseX < cx || mouseX >= cx + size || mouseY < cy || mouseY >= cy + size) return;
+
+        TileGrid grid = TileGrid.build(mapId, mapState, mapEntry, client.world);
+        MultiTileCanvas canvas = MultiTileCanvas.from(grid, mapState);
+        int originX = canvas.defaultScreenOriginX(cx + size / 2, zoom, panX);
+        int originY = canvas.defaultScreenOriginY(cy + size / 2, zoom, panY);
+        int canvasX = (int) Math.floor((mouseX - originX) / zoom);
+        int canvasZ = (int) Math.floor((mouseY - originY) / zoom);
+        if (canvasX < 0 || canvasZ < 0
+                || canvasX >= canvas.canvasWidthPx || canvasZ >= canvas.canvasHeightPx) return;
+
+        int worldX = canvas.worldOriginX + canvasX * canvas.scale;
+        int worldZ = canvas.worldOriginZ + canvasZ * canvas.scale;
+        int worldY = client.player == null ? 0 : client.player.getBlockY();
+        coordinatePopup = String.format("X %d  Y %d  Z %d", worldX, worldY, worldZ);
+        coordinatePopupUntil = System.currentTimeMillis() + 7000L;
     }
 
     private void adjustZoom(float delta) { zoom = Math.clamp(zoom + delta, 0.5f, 4.0f); }

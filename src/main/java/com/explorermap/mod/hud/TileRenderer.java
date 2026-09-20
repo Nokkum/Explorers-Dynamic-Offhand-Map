@@ -2,6 +2,7 @@ package com.explorermap.mod.hud;
 
 import com.explorermap.mod.expansion.MultiTileCanvas;
 import com.explorermap.mod.expansion.TileGrid;
+import com.explorermap.mod.config.ExplorerMapConfig;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.gui.DrawContext;
@@ -26,6 +27,7 @@ public final class TileRenderer {
 
         context.enableScissor(hudBoxX, hudBoxY, hudBoxX + hudSize, hudBoxY + hudSize);
         renderAllTiles(context, grid, canvas, originX, originY, pixSize, tileSize);
+        renderGridLines(context, grid, canvas, originX, originY, pixSize);
         context.disableScissor();
 
         context.enableScissor(hudBoxX - 8, hudBoxY - 8, hudBoxX + hudSize + 8, hudBoxY + hudSize + 8);
@@ -49,6 +51,7 @@ public final class TileRenderer {
 
         context.enableScissor(clipX0, clipY0, clipX1, clipY1);
         renderAllTiles(context, grid, canvas, originX, originY, pixSize, -1);
+        renderGridLines(context, grid, canvas, originX, originY, pixSize);
         context.disableScissor();
 
         context.enableScissor(clipX0, clipY0, clipX1, clipY1);
@@ -75,6 +78,32 @@ public final class TileRenderer {
 
             renderTilePixels(context, tile, tileScreenX, tileScreenY, pixSize);
             renderFadedEdge(context, grid, tile, tileScreenX, tileScreenY, pixSize);
+        }
+    }
+
+    private static void renderGridLines(DrawContext context, TileGrid grid,
+                                        MultiTileCanvas canvas, int originX, int originY,
+                                        float pixSize) {
+        ExplorerMapConfig cfg = ExplorerMapConfig.get();
+        if (!cfg.showGridLines) return;
+
+        int blockSpacing = cfg.gridSpacing == ExplorerMapConfig.GridSpacing.CHUNK ? 16 : 32;
+        int pixelsPerLine = Math.max(1, blockSpacing / canvas.scale);
+        int color = 0x66333333;
+
+        for (TileGrid.TileEntry tile : grid.tiles()) {
+            int tileX = originX + Math.round(canvas.tileCanvasX(tile.gridX()) * pixSize);
+            int tileY = originY + Math.round(canvas.tileCanvasZ(tile.gridZ()) * pixSize);
+            int tileSize = Math.round(128 * pixSize);
+
+            for (int px = pixelsPerLine; px < 128; px += pixelsPerLine) {
+                int x = tileX + Math.round(px * pixSize);
+                context.fill(x, tileY, x + 1, tileY + tileSize, color);
+            }
+            for (int pz = pixelsPerLine; pz < 128; pz += pixelsPerLine) {
+                int y = tileY + Math.round(pz * pixSize);
+                context.fill(tileX, y, tileX + tileSize, y + 1, color);
+            }
         }
     }
 

@@ -74,6 +74,10 @@ public class MinimapHud {
             renderCompass(context, boxX + size - 18, boxY + 2);
         }
 
+        if (cfg.showCoordinates) {
+            renderCoordinates(context, player, boxX, boxY, size, cfg);
+        }
+
         renderDimensionLabel(context, player, boxX, boxY, size);
 
         if (cfg.showExpansionArrows) {
@@ -120,6 +124,24 @@ public class MinimapHud {
         var tr = MinecraftClient.getInstance().textRenderer;
         int lw = tr.getWidth(label);
         ctx.drawText(tr, label, boxX + size / 2 - lw / 2, boxY + size + 2, 0xFFAAAAAA, true);
+    }
+
+    private static void renderCoordinates(DrawContext ctx, ClientPlayerEntity player,
+                                          int boxX, int boxY, int size, ExplorerMapConfig cfg) {
+        var tr = MinecraftClient.getInstance().textRenderer;
+        String[] coordinates = {
+                String.format("X %.0f", player.getX()),
+                String.format("Y %.0f", player.getY()),
+                String.format("Z %.0f", player.getZ())
+        };
+        int textX = switch (cfg.corner) {
+            case TOP_LEFT, BOTTOM_LEFT -> boxX + size + 5;
+            case TOP_RIGHT, BOTTOM_RIGHT -> boxX - 54;
+        };
+        int textY = boxY + size / 2 - 12;
+        for (int i = 0; i < coordinates.length; i++) {
+            ctx.drawText(tr, coordinates[i], textX, textY + i * 10, 0xFFD0D0D0, true);
+        }
     }
 
     private static void renderExpansionArrows(DrawContext ctx, MapEntryData mapEntry,
