@@ -18,7 +18,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import com.explorermap.mod.network.SaveWaypointPayload;
+import com.explorermap.network.SaveWaypointPayload;
 
 import java.util.ArrayList;
 import java.util.List;

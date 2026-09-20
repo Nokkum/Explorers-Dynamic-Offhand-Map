@@ -92,7 +92,7 @@ public final class StructureWaypointDetector {
         }
     }
 
-    private static boolean hasDuplicateWaypoint(com.explorermap.mod.data.MapEntryData entry,
+    private static boolean hasDuplicateWaypoint(com.explorermap.data.MapEntryData entry,
                                                  double wx, double wz) {
         for (Waypoint existing : entry.getWaypoints()) {
             double dx = existing.worldX() - wx;
