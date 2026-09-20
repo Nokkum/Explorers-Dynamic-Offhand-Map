@@ -11,9 +11,9 @@
   "environment": "*",
 
   "entrypoints": {
-    "main":    ["com.explorermap.mod.ExplorerMapMod"],
-    "client":  ["com.explorermap.mod.ExplorerMapClient"],
-    "modmenu": ["com.explorermap.mod.ExplorerMapModMenuIntegration"]
+    "main":    ["com.explorermap.ExplorerMapMod"],
+    "client":  ["com.explorermap.ExplorerMapClient"],
+    "modmenu": ["com.explorermap.ExplorerMapModMenuIntegration"]
   },
 
   "depends": {
