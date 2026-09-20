@@ -109,6 +109,7 @@ public final class MapEntryData {
     }
 
     public void addWaypoint(Waypoint wp) {
+        waypoints.removeIf(existing -> existing.name().equals(wp.name()));
         waypoints.add(wp);
     }
 

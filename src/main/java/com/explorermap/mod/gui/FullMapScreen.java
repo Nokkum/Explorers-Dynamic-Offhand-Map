@@ -300,6 +300,18 @@ public class FullMapScreen extends Screen {
                     closeContextMenu();
                 }
         ).dimensions(contextMenuX, contextMenuY + 20, 90, 18).build());
+
+        addDrawableChild(ButtonWidget.builder(
+                Text.translatable("label.explorermap.share_waypoint"),
+                b -> {
+                    Waypoint toShare = contextMenuWaypoint;
+                    int owningMapId = contextMenuMapId;
+                    closeContextMenu();
+                    if (client != null) {
+                        client.setScreen(new WaypointShareScreen(this, owningMapId, toShare));
+                    }
+                }
+        ).dimensions(contextMenuX, contextMenuY + 40, 90, 18).build());
     }
 
     private void deleteWaypoint(Waypoint wp, int owningMapId) {

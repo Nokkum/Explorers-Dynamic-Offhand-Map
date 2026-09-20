@@ -7,6 +7,7 @@ import com.explorermap.mod.network.RequestExpansionPayload;
 import com.explorermap.mod.network.SaveWaypointPayload;
 import com.explorermap.mod.network.SyncDiscoveryPayload;
 import com.explorermap.mod.network.SyncWaypointsPayload;
+import com.explorermap.mod.network.WaypointSharePayload;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.item.FilledMapItem;
@@ -30,6 +31,7 @@ public class ExplorerMapMod implements ModInitializer {
         RequestExpansionPayload.register();
         SaveWaypointPayload.register();
         DeleteWaypointPayload.register();
+        WaypointSharePayload.register();
         SyncDiscoveryPayload.Upload.register();
 
         ServerEventHandler.register();

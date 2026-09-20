@@ -14,6 +14,7 @@ import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
+import net.minecraft.item.Items;
 
 public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypoint) implements CustomPayload {
 
@@ -90,6 +91,19 @@ public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypo
             return;
         }
 
+        var entry = savedData.getOrCreate(payload.mapId());
+        boolean editing = !payload.previousName().isEmpty()
+                || entry.getWaypoints().stream().anyMatch(wp -> wp.name().equals(payload.waypoint().name()));
+        int compassCount = countCompasses(player);
+        int waypointCapacity = compassCount * 5;
+        if (!editing && entry.getWaypoints().size() >= waypointCapacity) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] SaveWaypoint: {} has reached waypoint capacity ({}/{}); a compass is required for every five waypoints",
+                    player.getName().getString(), entry.getWaypoints().size(), waypointCapacity);
+            SyncWaypointsPayload.sendTo(player, payload.mapId());
+            return;
+        }
+
         if (!payload.previousName().isEmpty() && !payload.previousName().equals(payload.waypoint().name())) {
             savedData.removeWaypoint(payload.mapId(), payload.previousName());
         }
@@ -100,5 +114,13 @@ public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypo
                 payload.waypoint().name(), payload.mapId());
 
         SyncWaypointsPayload.broadcastTo(player.getServer(), payload.mapId());
+    }
+
+    private static int countCompasses(ServerPlayerEntity player) {
+        int count = 0;
+        for (int i = 0; i < player.getInventory().size(); i++) {
+            if (player.getInventory().getStack(i).isOf(Items.COMPASS)) count += player.getInventory().getStack(i).getCount();
+        }
+        return count;
     }
 }
