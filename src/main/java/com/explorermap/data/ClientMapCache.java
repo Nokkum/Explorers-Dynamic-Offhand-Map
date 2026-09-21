@@ -21,6 +21,12 @@ public final class ClientMapCache {
         return ENTRIES.get(mapId);
     }
 
+    public static void tickRecency() {
+        for (MapEntryData entry : ENTRIES.values()) {
+            entry.tickRecency();
+        }
+    }
+
     public static void clearAll() {
         ENTRIES.clear();
     }

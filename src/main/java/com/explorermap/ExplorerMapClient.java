@@ -20,12 +20,14 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.util.Hand;
 import org.lwjgl.glfw.GLFW;
 
 @Environment(EnvType.CLIENT)
 public class ExplorerMapClient implements ClientModInitializer {
 
     public static KeyBinding OPEN_MAP_KEY;
+    private boolean minimapMouseDown;
 
     @Override
     public void onInitializeClient() {
@@ -51,8 +53,26 @@ public class ExplorerMapClient implements ClientModInitializer {
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            ClientMapCache.tickRecency();
+            boolean mouseDown = client.currentScreen == null
+                    && GLFW.glfwGetMouseButton(
+                            client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_1) == GLFW.GLFW_PRESS;
+            if (mouseDown && !minimapMouseDown) {
+                MinimapHud.handleClick(client);
+            }
+            minimapMouseDown = mouseDown;
+
             while (OPEN_MAP_KEY.wasPressed()) {
                 if (client.player != null) {
+                    client.setScreen(new FullMapScreen());
+                }
+            }
+
+            while (client.options.useKey.wasPressed()) {
+                if (client.currentScreen == null
+                        && client.player != null
+                        && client.player.getMainHandStack().isEmpty()
+                        && ExplorerMapMod.isFilledMap(client.player.getStackInHand(Hand.OFF_HAND))) {
                     client.setScreen(new FullMapScreen());
                 }
             }

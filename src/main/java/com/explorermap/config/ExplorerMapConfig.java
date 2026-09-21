@@ -52,6 +52,9 @@ public class ExplorerMapConfig implements ConfigData {
     @ConfigEntry.Gui.Tooltip
     public boolean fogOfDiscovery = true;
 
+    @ConfigEntry.Gui.Tooltip
+    public boolean highlightRecentDiscoveries = true;
+
     @ConfigEntry.BoundedDiscrete(min = 1, max = 20)
     public int discoveryTickInterval = 3;
 

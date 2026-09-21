@@ -41,6 +41,8 @@
   "text.autoconfig.explorermap.option.showCompass.tooltip": "Show a compass rose overlay on the mini-map.",
   "text.autoconfig.explorermap.option.showCoordinates": "Show Coordinates",
   "text.autoconfig.explorermap.option.showCoordinates.tooltip": "Show the player X, Y, and Z coordinates beside the mini-map.",
+  "text.autoconfig.explorermap.option.highlightRecentDiscoveries": "Highlight Recent Discoveries",
+  "text.autoconfig.explorermap.option.highlightRecentDiscoveries.tooltip": "Make recently observed map pixels brighter than older discoveries.",
   "text.autoconfig.explorermap.option.showGridLines": "Show Grid Lines",
   "text.autoconfig.explorermap.option.showGridLines.tooltip": "Overlay a coordinate grid on the mini-map and full map.",
   "text.autoconfig.explorermap.option.gridSpacing": "Grid Spacing",

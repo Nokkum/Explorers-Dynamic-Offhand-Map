@@ -1,6 +1,7 @@
 package com.explorermap.hud;
 
 import com.explorermap.data.MapEntryData;
+import com.explorermap.config.ExplorerMapConfig;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.block.MapColor;
@@ -28,16 +29,18 @@ public final class TileTextureCache {
 
     public Identifier getOrUpdate(int mapId, MapState mapState, MapEntryData mapEntry) {
         Entry entry = entries.get(mapId);
-        long gen = mapEntry.getDiscoveryGeneration();
+        long gen = mapEntry.getVisualGeneration();
+        boolean highlightRecent = ExplorerMapConfig.get().highlightRecentDiscoveries;
 
         if (entry == null) {
             entry = new Entry(nextSlot++);
             entries.put(mapId, entry);
         }
 
-        if (entry.generation != gen) {
+        if (entry.generation != gen || entry.highlightRecent != highlightRecent) {
             rebuild(entry, mapState, mapEntry);
             entry.generation = gen;
+            entry.highlightRecent = highlightRecent;
         }
 
         return entry.identifier;
@@ -85,6 +88,9 @@ public final class TileTextureCache {
                 int abgr;
                 if (discovered) {
                     int argb = MapColor.getRenderColor(colors[row * 128 + col] & 0xFF) | 0xFF000000;
+                    if (ExplorerMapConfig.get().highlightRecentDiscoveries) {
+                        argb = highlightRecent(argb, mapEntry.recentValue(col, row));
+                    }
                     abgr = argbToAbgr(argb);
                 } else {
                     abgr = FOG_ABGR;
@@ -106,6 +112,18 @@ public final class TileTextureCache {
         return (a << 24) | (b << 16) | (g << 8) | r;
     }
 
+    private static int highlightRecent(int argb, int recency) {
+        if (recency <= 0) return argb;
+        int r = (argb >> 16) & 0xFF;
+        int g = (argb >> 8) & 0xFF;
+        int b = argb & 0xFF;
+        int boost = 24 + (recency * 40 / 255);
+        r = Math.min(255, r + boost);
+        g = Math.min(255, g + boost);
+        b = Math.min(255, b + boost / 2);
+        return (argb & 0xFF000000) | (r << 16) | (g << 8) | b;
+    }
+
     private static int abgr(int a, int b, int g, int r) {
         return (a << 24) | (b << 16) | (g << 8) | r;
     }
@@ -113,6 +131,7 @@ public final class TileTextureCache {
     private static final class Entry {
         final int slot;
         long generation = Long.MIN_VALUE;
+        boolean highlightRecent = true;
         NativeImageBackedTexture texture;
         Identifier identifier;
 

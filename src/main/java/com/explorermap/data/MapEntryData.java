@@ -15,14 +15,17 @@ public final class MapEntryData {
     public static final int BYTE_COUNT  = PIXEL_COUNT / 8;
 
     private final byte[] discoveredPixels;
+    private transient byte[] recentPixels;
 
     private final List<ExpansionRecord> expansions;
     private final List<Waypoint> waypoints;
 
     private transient long discoveryGeneration = 0L;
+    private transient long visualGeneration = 0L;
 
     public MapEntryData() {
         this.discoveredPixels = new byte[BYTE_COUNT];
+        this.recentPixels = new byte[PIXEL_COUNT];
         this.expansions = new ArrayList<>();
         this.waypoints = new ArrayList<>();
     }
@@ -30,6 +33,7 @@ public final class MapEntryData {
     private MapEntryData(byte[] discoveredPixels, List<ExpansionRecord> expansions, List<Waypoint> waypoints) {
         this.discoveredPixels = discoveredPixels.length == BYTE_COUNT
                 ? discoveredPixels.clone() : new byte[BYTE_COUNT];
+        this.recentPixels = new byte[PIXEL_COUNT];
         this.expansions = new ArrayList<>(expansions);
         this.waypoints = new ArrayList<>(waypoints);
     }
@@ -40,10 +44,15 @@ public final class MapEntryData {
         int idx = bit >> 3, shift = bit & 7;
         byte before = discoveredPixels[idx];
         discoveredPixels[idx] |= (byte) (1 << shift);
+        int pixel = row * MAP_SIZE + col;
+        boolean refreshed = (recentPixels[pixel] & 0xFF) < 255;
+        recentPixels[pixel] = (byte) 0xFF;
         if (discoveredPixels[idx] != before) {
             discoveryGeneration++;
+            visualGeneration++;
             return true;
         }
+        if (refreshed) visualGeneration++;
         return false;
     }
 
@@ -54,7 +63,11 @@ public final class MapEntryData {
             discoveredPixels[i] = (byte) 0xFF;
             if (discoveredPixels[i] != before) changed = true;
         }
-        if (changed) discoveryGeneration++;
+        if (changed) {
+            discoveryGeneration++;
+            visualGeneration++;
+            java.util.Arrays.fill(recentPixels, (byte) 0xFF);
+        }
         return changed;
     }
 
@@ -78,6 +91,27 @@ public final class MapEntryData {
         return discoveryGeneration;
     }
 
+    public long getVisualGeneration() {
+        return visualGeneration;
+    }
+
+    public int recentValue(int col, int row) {
+        if (col < 0 || col >= MAP_SIZE || row < 0 || row >= MAP_SIZE) return 0;
+        return recentPixels[row * MAP_SIZE + col] & 0xFF;
+    }
+
+    public boolean tickRecency() {
+        boolean changed = false;
+        for (int i = 0; i < recentPixels.length; i++) {
+            int value = recentPixels[i] & 0xFF;
+            if (value == 0) continue;
+            recentPixels[i] = (byte) Math.max(0, value - 2);
+            changed = true;
+        }
+        if (changed) visualGeneration++;
+        return changed;
+    }
+
     public boolean mergeBitmask(byte[] other) {
         boolean changed = false;
         int n = Math.min(other.length, BYTE_COUNT);
@@ -86,7 +120,11 @@ public final class MapEntryData {
             discoveredPixels[i] |= other[i];
             if (discoveredPixels[i] != before) {
                 discoveryGeneration++;
+                visualGeneration++;
                 changed = true;
+                for (int bit = 0; bit < 8; bit++) {
+                    if ((other[i] & (1 << bit)) != 0) recentPixels[i * 8 + bit] = (byte) 0xFF;
+                }
             }
         }
         return changed;

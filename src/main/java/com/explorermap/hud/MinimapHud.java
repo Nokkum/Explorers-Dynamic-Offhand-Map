@@ -23,6 +23,46 @@ import net.minecraft.util.Hand;
 @Environment(EnvType.CLIENT)
 public class MinimapHud {
 
+    public static boolean handleClick(MinecraftClient client) {
+        if (client == null || client.player == null || client.world == null || client.currentScreen != null) {
+            return false;
+        }
+
+        ExplorerMapConfig cfg = ExplorerMapConfig.get();
+        if (!cfg.showHud || (cfg.hideWhenSneaking && client.player.isSneaking())) return false;
+
+        ItemStack offHand = client.player.getStackInHand(Hand.OFF_HAND);
+        if (!ExplorerMapMod.isFilledMap(offHand)) return false;
+
+        int mapId = MapIdentity.rawIdOf(offHand);
+        MapState mapState = mapId >= 0 ? MapIdentity.stateOf(offHand, client.world) : null;
+        if (mapState == null
+                || !DimensionMapTracker.isMapRelevantForCurrentDimension(client.player, mapState)) {
+            return false;
+        }
+
+        int size = cfg.mapSize;
+        int padding = cfg.padding;
+        int sw = client.getWindow().getScaledWidth();
+        int sh = client.getWindow().getScaledHeight();
+        int boxX, boxY;
+        switch (cfg.corner) {
+            case TOP_LEFT -> { boxX = padding; boxY = padding; }
+            case TOP_RIGHT -> { boxX = sw - size - padding; boxY = padding; }
+            case BOTTOM_LEFT -> { boxX = padding; boxY = sh - size - padding; }
+            default -> { boxX = sw - size - padding; boxY = sh - size - padding; }
+        }
+
+        double mouseX = client.mouse.getX() * sw / Math.max(1, client.getWindow().getWidth());
+        double mouseY = client.mouse.getY() * sh / Math.max(1, client.getWindow().getHeight());
+        if (mouseX < boxX || mouseX >= boxX + size || mouseY < boxY || mouseY >= boxY + size) {
+            return false;
+        }
+
+        client.setScreen(new com.explorermap.mod.gui.FullMapScreen());
+        return true;
+    }
+
     public static void render(DrawContext context, RenderTickCounter tickCounter) {
         MinecraftClient client = MinecraftClient.getInstance();
         ClientPlayerEntity player = client.player;
