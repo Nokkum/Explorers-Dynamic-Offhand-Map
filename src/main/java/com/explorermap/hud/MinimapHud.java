@@ -59,7 +59,7 @@ public class MinimapHud {
             return false;
         }
 
-        client.setScreen(new com.explorermap.mod.gui.FullMapScreen());
+        client.setScreen(new com.explorermap.gui.FullMapScreen());
         return true;
     }
 
