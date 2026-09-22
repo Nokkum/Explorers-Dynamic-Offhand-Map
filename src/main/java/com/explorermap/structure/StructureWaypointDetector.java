@@ -7,6 +7,7 @@ import com.explorermap.waypoint.Waypoint;
 import net.minecraft.item.map.MapState;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.structure.StructureStart;
 import net.minecraft.util.math.BlockPos;
@@ -24,6 +25,7 @@ public final class StructureWaypointDetector {
     private StructureWaypointDetector() {}
 
     public static void checkAndPlace(MinecraftServer server,
+                                      ServerPlayerEntity player,
                                       int mapId,
                                       MapState mapState,
                                       ExplorerMapSavedData savedData) {
@@ -90,7 +92,7 @@ public final class StructureWaypointDetector {
         }
     }
 
-    private static boolean hasDuplicateWaypoint(com.explorermap.data.MapEntryData entry,
+    private static boolean hasDuplicateWaypoint(com.explorermap.mod.data.MapEntryData entry,
                                                  double wx, double wz) {
         for (Waypoint existing : entry.getWaypoints()) {
             double dx = existing.worldX() - wx;
