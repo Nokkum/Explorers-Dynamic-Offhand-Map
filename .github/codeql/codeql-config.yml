@@ -1,0 +1,7 @@
+name: "CodeQL Custom Configuration"
+
+paths-ignore:
+  - '**/build/**'
+  - '**/out/**'
+  - 'src/test/**'
+  - '**/*.md'
