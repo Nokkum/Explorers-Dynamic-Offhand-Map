@@ -7,7 +7,6 @@ import com.explorermap.waypoint.Waypoint;
 import net.minecraft.item.map.MapState;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.structure.StructureStart;
 import net.minecraft.util.math.BlockPos;
@@ -25,7 +24,6 @@ public final class StructureWaypointDetector {
     private StructureWaypointDetector() {}
 
     public static void checkAndPlace(MinecraftServer server,
-                                      ServerPlayerEntity player,
                                       int mapId,
                                       MapState mapState,
                                       ExplorerMapSavedData savedData) {
