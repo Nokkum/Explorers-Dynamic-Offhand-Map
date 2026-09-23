@@ -17,8 +17,11 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.map.MapState;
 import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.RaycastContext;
 
 @Environment(EnvType.CLIENT)
 public class ExplorationEngine {
@@ -93,34 +96,46 @@ public class ExplorationEngine {
                 float yaw = yawDeg - halfFov + t * fovDeg;
 
                 Vec3d dir = directionFromAngles(yaw, pitch);
-                markRayAcrossTiles(origin, dir, mapState, grid, canvas);
+                markRayAcrossTiles(player, origin, dir, mapState, grid, canvas);
             }
         }
     }
 
-    private static void markRayAcrossTiles(Vec3d origin, Vec3d dir,
+    /**
+     * Reveal only the surface reached by a camera ray.
+     *
+     * The old implementation projected each ray across the complete map
+     * range without consulting the world. As a result, looking at a wall
+     * could reveal terrain behind it. A visual raycast now gives us the first
+     * surface the player can actually see; rays that hit the sky reveal
+     * nothing.
+     */
+    private static void markRayAcrossTiles(ClientPlayerEntity player,
+                                            Vec3d origin, Vec3d dir,
                                             MapState mapState,
                                             TileGrid grid,
                                             MultiTileCanvas canvas) {
-        int scale = 1 << mapState.scale;
-        double stepSize = Math.max(scale, 2.0);
-        double x = origin.x;
-        double z = origin.z;
+        Vec3d rayEnd = origin.add(dir.multiply(MAX_RANGE));
+        BlockHitResult hit = player.getWorld().raycast(new RaycastContext(
+                origin,
+                rayEnd,
+                RaycastContext.ShapeType.VISUAL,
+                RaycastContext.FluidHandling.NONE,
+                player
+        ));
 
-        for (double dist = 0; dist < MAX_RANGE; dist += stepSize) {
-            x += dir.x * stepSize;
-            z += dir.z * stepSize;
+        if (hit.getType() != HitResult.Type.BLOCK) return;
 
-            TileGrid.TileEntry owner = grid.findTileContaining(canvas, x, z);
-            if (owner == null) break;
+        Vec3d visiblePoint = hit.getPos();
+        TileGrid.TileEntry owner =
+                grid.findTileContaining(canvas, visiblePoint.x, visiblePoint.z);
+        if (owner == null) return;
 
-            int canvasX = canvas.worldToCanvasX(x);
-            int canvasZ = canvas.worldToCanvasZ(z);
-            int localCol = canvasX - canvas.tileCanvasX(owner.gridX());
-            int localRow = canvasZ - canvas.tileCanvasZ(owner.gridZ());
-
-            owner.entry().discover(localCol, localRow);
-        }
+        int canvasX = canvas.worldToCanvasX(visiblePoint.x);
+        int canvasZ = canvas.worldToCanvasZ(visiblePoint.z);
+        int localCol = canvasX - canvas.tileCanvasX(owner.gridX());
+        int localRow = canvasZ - canvas.tileCanvasZ(owner.gridZ());
+        owner.entry().discover(localCol, localRow);
     }
 
     private static Vec3d directionFromAngles(float yawDeg, float pitchDeg) {
