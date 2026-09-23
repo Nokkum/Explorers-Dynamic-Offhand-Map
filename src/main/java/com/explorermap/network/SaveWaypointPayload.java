@@ -91,24 +91,68 @@ public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypo
             return;
         }
 
+        String name = payload.waypoint().name().trim();
+        if (name.isEmpty() || name.length() > MAX_NAME_LENGTH) {
+            ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: invalid name rejected from {}",
+                    player.getName().getString());
+            return;
+        }
+
         var entry = savedData.getOrCreate(payload.mapId());
-        boolean editing = !payload.previousName().isEmpty()
-                || entry.getWaypoints().stream().anyMatch(wp -> wp.name().equals(payload.waypoint().name()));
+        String playerUuid = player.getUuid().toString();
+        Waypoint previous = entry.getWaypoints().stream()
+                .filter(wp -> wp.name().equals(payload.previousName()))
+                .findFirst()
+                .orElse(null);
+
+        if (!payload.previousName().isEmpty()
+                && (previous == null || !previous.isOwnedBy(player.getUuid()))) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] SaveWaypoint: {} tried to edit a waypoint they do not own",
+                    player.getName().getString());
+            return;
+        }
+
+        Waypoint nameConflict = entry.getWaypoints().stream()
+                .filter(wp -> wp.name().equals(name))
+                .findFirst()
+                .orElse(null);
+        if (nameConflict != null && nameConflict != previous) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] SaveWaypoint: duplicate waypoint name '{}' rejected",
+                    name);
+            return;
+        }
+
+        boolean editing = previous != null;
         int compassCount = countCompasses(player);
         int waypointCapacity = compassCount * 5;
-        if (!editing && entry.getWaypoints().size() >= waypointCapacity) {
+        long ownedWaypointCount = entry.getWaypoints().stream()
+                .filter(wp -> wp.isOwnedBy(player.getUuid()))
+                .count();
+        if (!editing && ownedWaypointCount >= waypointCapacity) {
             ExplorerMapMod.LOGGER.warn(
                     "[ExplorerMap] SaveWaypoint: {} has reached waypoint capacity ({}/{}); a compass is required for every five waypoints",
-                    player.getName().getString(), entry.getWaypoints().size(), waypointCapacity);
+                    player.getName().getString(), ownedWaypointCount, waypointCapacity);
             SyncWaypointsPayload.sendTo(player, payload.mapId());
             return;
         }
 
-        if (!payload.previousName().isEmpty() && !payload.previousName().equals(payload.waypoint().name())) {
+        String ownerUuid = previous != null ? previous.ownerUuid() : playerUuid;
+        Waypoint sanitized = new Waypoint(
+                name,
+                wx,
+                wz,
+                iconId,
+                payload.waypoint().color(),
+                ownerUuid
+        );
+
+        if (previous != null && !previous.name().equals(name)) {
             savedData.removeWaypoint(payload.mapId(), payload.previousName());
         }
-        savedData.removeWaypoint(payload.mapId(), payload.waypoint().name());
-        savedData.addWaypoint(payload.mapId(), payload.waypoint());
+        savedData.removeWaypoint(payload.mapId(), name);
+        savedData.addWaypoint(payload.mapId(), sanitized);
 
         ExplorerMapMod.LOGGER.debug("[ExplorerMap] Saved waypoint '{}' on map #{}",
                 payload.waypoint().name(), payload.mapId());

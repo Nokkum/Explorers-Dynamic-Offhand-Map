@@ -45,8 +45,8 @@ public record SyncWaypointsPayload(
     public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
 
     public static void sendTo(ServerPlayerEntity player, int mapId) {
-        var entry = ExplorerMapSavedData.get(player.getServer()).get(mapId);
-        List<Waypoint> waypoints = entry != null ? entry.getWaypoints() : List.of();
+        List<Waypoint> waypoints =
+                ExplorerMapSavedData.get(player.getServer()).visibleWaypoints(mapId, player.getUuid());
         ServerPlayNetworking.send(player, new SyncWaypointsPayload(mapId, waypoints));
     }
 

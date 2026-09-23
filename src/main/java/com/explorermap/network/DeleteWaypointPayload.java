@@ -60,6 +60,13 @@ public record DeleteWaypointPayload(int mapId, String waypointName) implements C
         var mapState = world.getMapState(new MapIdComponent(payload.mapId()));
         if (mapState == null) return;
 
+        if (!savedData.canManageWaypoint(payload.mapId(), payload.waypointName(), player.getUuid())) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] DeleteWaypoint: {} tried to delete a waypoint they do not own",
+                    player.getName().getString());
+            return;
+        }
+
         savedData.removeWaypoint(payload.mapId(), payload.waypointName());
 
         ExplorerMapMod.LOGGER.debug("[ExplorerMap] Deleted waypoint '{}' from map #{}",

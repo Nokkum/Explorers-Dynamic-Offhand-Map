@@ -57,7 +57,12 @@ public record WaypointSharePayload(int mapId, String waypointName, String target
                 .filter(wp -> wp.name().equals(payload.waypointName()))
                 .findFirst()
                 .orElse(null);
-        if (waypoint == null) return;
+        if (waypoint == null || !waypoint.isOwnedBy(sender.getUuid())) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] ShareWaypoint: {} tried to share a waypoint they do not own",
+                    sender.getName().getString());
+            return;
+        }
 
         ServerPlayerEntity target = sender.getServer().getPlayerManager().getPlayer(payload.targetName());
         if (target == null || target == sender) return;
@@ -71,7 +76,10 @@ public record WaypointSharePayload(int mapId, String waypointName, String target
         }
 
         sender.getInventory().getStack(compassSlot).decrement(1);
-        savedData.addWaypoint(payload.mapId(), waypoint);
+        if (!savedData.grantWaypointShare(payload.mapId(), waypoint.name(), target.getUuid())) {
+            return;
+        }
+
         SyncWaypointsPayload.broadcastTo(sender.getServer(), payload.mapId());
         SyncWaypointsPayload.sendTo(target, payload.mapId());
         ExplorerMapMod.LOGGER.info(

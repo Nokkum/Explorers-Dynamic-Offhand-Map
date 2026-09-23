@@ -5,7 +5,7 @@
 - Maps can be expanded strategically, with directional control and resource cost.
 - Mini-map HUD only shows if the off-hand has a filled map.
 - Optional toggle: hide map HUD in menus or when sneaking.
-- Each tick, track the player’s camera vector and field of view.
+- Each tick, track the player’s camera vector and field of view. (Note: Not every tick exactly, as that would be laggy as hell, but you get the idea.)
 - Only mark map pixels as “discovered” if visually observed, not just walked near.
 - Partially explored chunks remain blank until the player looks at them.
 - Optional fog-of-discovery overlay for undiscovered areas.

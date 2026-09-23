@@ -97,10 +97,6 @@ public record RequestExpansionPayload(
         savedData.addExpansion(mapId,
                 new ExpansionRecord(payload.direction(), newMapId, payload.highDetail()));
 
-        if (payload.highDetail()) {
-            savedData.discoverAll(newMapId);
-        }
-
         ServerPlayNetworking.send(player,
                 new GrantExpansionPayload(payload.direction(), newMapId, payload.highDetail()));
     }
