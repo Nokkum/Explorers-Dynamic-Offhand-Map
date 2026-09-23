@@ -53,7 +53,7 @@
 - Corner placement (top-left, top-right, etc.)
 - Scale and opacity
 - Enable/disable expansion arrows
-<details>
+</details>
 
 <details>
 <summary>Unimplemented:</summary>
@@ -68,4 +68,4 @@
 <summary>Never Implement:</summary>
 - Skipping chunk borders + light level (debug features).
 - Skipping biome name (debug feature + gets repetitive fast).
-<details>
+</details>
