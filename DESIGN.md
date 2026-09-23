@@ -50,6 +50,7 @@
 
 <details>
 <summary>Configuration options:</summary>
+
 - Corner placement (top-left, top-right, etc.)
 - Scale and opacity
 - Enable/disable expansion arrows
@@ -57,6 +58,7 @@
 
 <details>
 <summary>Unimplemented:</summary>
+
 - Cartography-table integration
 - Per-player discovery storage and sharing
 - Item frame and vanilla map interaction hooks
@@ -66,6 +68,7 @@
 
 <details>
 <summary>Never Implement:</summary>
+
 - Skipping chunk borders + light level (debug features).
 - Skipping biome name (debug feature + gets repetitive fast).
 </details>
