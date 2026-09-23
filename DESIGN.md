@@ -1,11 +1,9 @@
-(Not all has been implemented)
-
 Configuration options:
 - Corner placement (top-left, top-right, etc.)
 - Scale and opacity
 - Enable/disable expansion arrows
 
-design:
+Design:
 - Holding a filled map in your off-hand triggers a hands-free mini-map HUD in a corner.
 - Updates dynamically as you explore, only revealing areas you’ve actually seen.
 - Supports vanilla and modded worlds, including biomes, structures, and dimensions.
@@ -54,5 +52,14 @@ design:
 - Add map zoom like Xaero's Minimap.
 - Waypoint sharing: every 5 waypoints (1 compass) = share 1 waypoint to someone.
 - No more F3 needed for coords—map in offhand shows X, Y, Z to the right of the minimap.
+
+Unimplemented:
+- Cartography-table integration
+- Per-player discovery storage and sharing
+- Item frame and vanilla map interaction hooks
+- Waypoint capacity model
+- Biome/Mod integration API
+
+Never Implement:
 - Skipping chunk borders + light level (debug features).
 - Skipping biome name (debug feature + gets repetitive fast).
