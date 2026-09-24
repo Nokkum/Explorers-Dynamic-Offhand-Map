@@ -101,15 +101,6 @@ public class ExplorationEngine {
         }
     }
 
-    /**
-     * Reveal only the surface reached by a camera ray.
-     *
-     * The old implementation projected each ray across the complete map
-     * range without consulting the world. As a result, looking at a wall
-     * could reveal terrain behind it. A visual raycast now gives us the first
-     * surface the player can actually see; rays that hit the sky reveal
-     * nothing.
-     */
     private static void markRayAcrossTiles(ClientPlayerEntity player,
                                             Vec3d origin, Vec3d dir,
                                             MapState mapState,

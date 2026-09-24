@@ -28,10 +28,6 @@ public record Waypoint(String name,
 
     public static final int DEFAULT_COLOR = 0xFFFFFFFF;
 
-    /**
-     * Keeps old saved data and existing client-side construction compatible.
-     * An empty owner is reserved for legacy/system-generated waypoints.
-     */
     public Waypoint(String name, double worldX, double worldZ, String iconId, int color) {
         this(name, worldX, worldZ, iconId, color, "");
     }
