@@ -5,9 +5,7 @@ import com.explorermap.data.ClientMapCache;
 import com.explorermap.engine.ExplorationEngine;
 import com.explorermap.gui.ExpansionFeedback;
 import com.explorermap.gui.FullMapScreen;
-import com.explorermap.gui.CartographyTableScreen;
 import com.explorermap.hud.MinimapHud;
-import com.explorermap.interaction.ExplorerMapClientInteractions;
 import com.explorermap.hud.TileTextureCache;
 import com.explorermap.network.ExpansionFailedPayload;
 import com.explorermap.network.GrantExpansionPayload;
@@ -31,11 +29,6 @@ public class ExplorerMapClient implements ClientModInitializer {
     public static KeyBinding OPEN_MAP_KEY;
     private boolean minimapMouseDown;
 
-    public static void openCartographyTable(net.minecraft.util.math.BlockPos tablePos) {
-        var client = net.minecraft.client.MinecraftClient.getInstance();
-        if (client.player != null) client.setScreen(new CartographyTableScreen(tablePos));
-    }
-
     @Override
     public void onInitializeClient() {
         ExplorerMapConfig.load();
@@ -47,7 +40,6 @@ public class ExplorerMapClient implements ClientModInitializer {
         SyncDiscoveryPayload.Broadcast.registerClient();
 
         ExpansionFailedPayload.registerClient();
-        ExplorerMapClientInteractions.register();
 
         HudRenderCallback.EVENT.register(MinimapHud::render);
 

@@ -1,7 +1,6 @@
 package com.explorermap.hud;
 
 import com.explorermap.data.MapEntryData;
-import com.explorermap.api.ExplorerMapApi;
 import com.explorermap.config.ExplorerMapConfig;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -32,19 +31,16 @@ public final class TileTextureCache {
         Entry entry = entries.get(mapId);
         long gen = mapEntry.getVisualGeneration();
         boolean highlightRecent = ExplorerMapConfig.get().highlightRecentDiscoveries;
-        long integrationGeneration = ExplorerMapApi.generation();
 
         if (entry == null) {
             entry = new Entry(nextSlot++);
             entries.put(mapId, entry);
         }
 
-        if (entry.generation != gen || entry.highlightRecent != highlightRecent
-                || entry.integrationGeneration != integrationGeneration) {
+        if (entry.generation != gen || entry.highlightRecent != highlightRecent) {
             rebuild(entry, mapState, mapEntry);
             entry.generation = gen;
             entry.highlightRecent = highlightRecent;
-            entry.integrationGeneration = integrationGeneration;
         }
 
         return entry.identifier;
@@ -66,10 +62,6 @@ public final class TileTextureCache {
     private void rebuild(Entry entry, MapState mapState, MapEntryData mapEntry) {
         byte[] colors  = mapState.colors;
         byte[] bitmask = mapEntry.getDiscoveredPixelsCopy();
-        var world = MinecraftClient.getInstance().world;
-        int scale = 1 << mapState.scale;
-        int minX = mapState.centerX - 64 * scale;
-        int minZ = mapState.centerZ - 64 * scale;
 
         var tm = MinecraftClient.getInstance().getTextureManager();
 
@@ -95,15 +87,7 @@ public final class TileTextureCache {
 
                 int abgr;
                 if (discovered) {
-                    int vanilla = MapColor.getRenderColor(colors[row * 128 + col] & 0xFF);
-                    int argb = vanilla;
-                    if (world != null && world.getRegistryKey().equals(mapState.dimension)) {
-                        var sample = new net.minecraft.util.math.BlockPos(
-                                minX + col * scale + scale / 2, 64,
-                                minZ + row * scale + scale / 2);
-                        argb = ExplorerMapApi.colorFor(world, sample, vanilla);
-                    }
-                    argb |= 0xFF000000;
+                    int argb = MapColor.getRenderColor(colors[row * 128 + col] & 0xFF) | 0xFF000000;
                     if (ExplorerMapConfig.get().highlightRecentDiscoveries) {
                         argb = highlightRecent(argb, mapEntry.recentValue(col, row));
                     }
@@ -147,7 +131,6 @@ public final class TileTextureCache {
     private static final class Entry {
         final int slot;
         long generation = Long.MIN_VALUE;
-        long integrationGeneration = Long.MIN_VALUE;
         boolean highlightRecent = true;
         NativeImageBackedTexture texture;
         Identifier identifier;

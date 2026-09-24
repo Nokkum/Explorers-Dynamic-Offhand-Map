@@ -31,25 +31,18 @@ public class ExplorerMapSavedData extends PersistentState {
     private final Map<Integer, MapEntryData> entries = new HashMap<>();
     private final Map<TileKey, Integer> tileIndex = new HashMap<>();
     private final Map<Integer, Map<String, Set<String>>> waypointShares = new HashMap<>();
-    private final Map<Integer, Map<String, byte[]>> playerDiscoveries = new HashMap<>();
 
     public ExplorerMapSavedData() {}
 
     private ExplorerMapSavedData(Map<Integer, MapEntryData> entries,
                                  Map<TileKey, Integer> tileIndex,
-                                 Map<Integer, Map<String, Set<String>>> waypointShares,
-                                 Map<Integer, Map<String, byte[]>> playerDiscoveries) {
+                                 Map<Integer, Map<String, Set<String>>> waypointShares) {
         this.entries.putAll(entries);
         this.tileIndex.putAll(tileIndex);
         waypointShares.forEach((mapId, recipients) -> this.waypointShares.put(
                 mapId,
                 new HashMap<>(recipients)
         ));
-        playerDiscoveries.forEach((mapId, players) -> {
-            Map<String, byte[]> copied = new HashMap<>();
-            players.forEach((uuid, bits) -> copied.put(uuid, bits.clone()));
-            this.playerDiscoveries.put(mapId, copied);
-        });
     }
 
     public MapEntryData getOrCreate(int mapId) {
@@ -66,44 +59,6 @@ public class ExplorerMapSavedData extends PersistentState {
         return changed;
     }
 
-    public byte[] getPlayerDiscovery(int mapId, UUID playerId) {
-        if (playerId == null) return getOrCreate(mapId).getDiscoveredPixelsCopy();
-        String uuid = playerId.toString();
-        Map<String, byte[]> players = playerDiscoveries.get(mapId);
-        if (players == null) {
-            return getOrCreate(mapId).getDiscoveredPixelsCopy();
-        }
-        return players.getOrDefault(uuid, new byte[MapEntryData.BYTE_COUNT]).clone();
-    }
-
-    public boolean mergePlayerBitmask(int mapId, UUID playerId, byte[] bitmask) {
-        if (playerId == null || bitmask == null) return false;
-        Map<String, byte[]> players =
-                playerDiscoveries.computeIfAbsent(mapId, ignored -> new HashMap<>());
-        boolean hasExistingPlayers = !players.isEmpty();
-        byte[] current = players.computeIfAbsent(playerId.toString(), ignored ->
-                hasExistingPlayers
-                        ? new byte[MapEntryData.BYTE_COUNT]
-                        : getOrCreate(mapId).getDiscoveredPixelsCopy());
-        boolean changed = false;
-        int count = Math.min(current.length, bitmask.length);
-        for (int i = 0; i < count; i++) {
-            byte before = current[i];
-            current[i] |= bitmask[i];
-            changed |= before != current[i];
-        }
-        // Keep the legacy union available for old structure detection and old saves.
-        boolean legacyChanged = getOrCreate(mapId).mergeBitmask(bitmask);
-        if (changed || legacyChanged) markDirty();
-        return changed;
-    }
-
-    public boolean sharePlayerDiscovery(int mapId, UUID from, UUID recipient) {
-        if (from == null || recipient == null) return false;
-        byte[] source = getPlayerDiscovery(mapId, from);
-        return mergePlayerBitmask(mapId, recipient, source);
-    }
-
     public void addExpansion(int mapId, ExpansionRecord record) {
         getOrCreate(mapId).addExpansion(record);
         markDirty();
@@ -112,19 +67,6 @@ public class ExplorerMapSavedData extends PersistentState {
     public void addWaypoint(int mapId, Waypoint wp) {
         getOrCreate(mapId).addWaypoint(wp);
         markDirty();
-    }
-
-    public boolean addWaypointCapacity(int mapId) {
-        getOrCreate(mapId).addWaypointCapacity();
-        markDirty();
-        return true;
-    }
-
-    public boolean consumeWaypointShareCharge(int mapId) {
-        MapEntryData entry = get(mapId);
-        if (entry == null || !entry.consumeWaypointShareCharge()) return false;
-        markDirty();
-        return true;
     }
 
     public void removeWaypoint(int mapId, String name) {
@@ -268,33 +210,9 @@ public class ExplorerMapSavedData extends PersistentState {
         );
     }
 
-    private record DiscoveryRow(int mapId, String playerUuid, byte[] bitmask) {
-        static final Codec<DiscoveryRow> CODEC = RecordCodecBuilder.create(instance ->
-                instance.group(
-                        Codec.INT.fieldOf("map_id").forGetter(DiscoveryRow::mapId),
-                        Codec.STRING.fieldOf("player_uuid").forGetter(DiscoveryRow::playerUuid),
-                        Codec.BYTE.listOf().xmap(
-                                list -> {
-                                    byte[] result = new byte[MapEntryData.BYTE_COUNT];
-                                    for (int i = 0; i < Math.min(result.length, list.size()); i++) {
-                                        result[i] = list.get(i);
-                                    }
-                                    return result;
-                                },
-                                bytes -> {
-                                    List<Byte> result = new ArrayList<>(bytes.length);
-                                    for (byte value : bytes) result.add(value);
-                                    return result;
-                                }
-                        ).fieldOf("bitmask").forGetter(DiscoveryRow::bitmask)
-                ).apply(instance, DiscoveryRow::new)
-        );
-    }
-
     private record SaveShape(List<EntryRow> entries,
                              List<TileRow> tiles,
-                             List<ShareRow> shares,
-                             List<DiscoveryRow> discoveries) {}
+                             List<ShareRow> shares) {}
 
     private static final Codec<SaveShape> SHAPE_CODEC = RecordCodecBuilder.create(instance ->
             instance.group(
@@ -302,10 +220,7 @@ public class ExplorerMapSavedData extends PersistentState {
                     TileRow.CODEC.listOf().fieldOf("tiles").forGetter(SaveShape::tiles),
                     ShareRow.CODEC.listOf()
                             .optionalFieldOf("waypoint_shares", List.of())
-                            .forGetter(SaveShape::shares),
-                    DiscoveryRow.CODEC.listOf()
-                            .optionalFieldOf("player_discoveries", List.of())
-                            .forGetter(SaveShape::discoveries)
+                            .forGetter(SaveShape::shares)
             ).apply(instance, SaveShape::new)
     );
 
@@ -322,12 +237,7 @@ public class ExplorerMapSavedData extends PersistentState {
                             .computeIfAbsent(row.recipientUuid(), ignored -> new HashSet<>())
                             .add(row.waypointName());
                 }
-                Map<Integer, Map<String, byte[]>> discoveryMap = new HashMap<>();
-                for (DiscoveryRow row : shape.discoveries()) {
-                    discoveryMap.computeIfAbsent(row.mapId(), ignored -> new HashMap<>())
-                            .put(row.playerUuid(), row.bitmask().clone());
-                }
-                return new ExplorerMapSavedData(entryMap, tileMap, shareMap, discoveryMap);
+                return new ExplorerMapSavedData(entryMap, tileMap, shareMap);
             },
             data -> {
                 List<EntryRow> entryRows = new ArrayList<>(data.entries.size());
@@ -339,11 +249,7 @@ public class ExplorerMapSavedData extends PersistentState {
                         recipients.forEach((recipient, names) ->
                                 names.forEach(name ->
                                         shareRows.add(new ShareRow(mapId, recipient, name)))));
-                List<DiscoveryRow> discoveryRows = new ArrayList<>();
-                data.playerDiscoveries.forEach((mapId, players) ->
-                        players.forEach((playerUuid, bitmask) ->
-                                discoveryRows.add(new DiscoveryRow(mapId, playerUuid, bitmask.clone()))));
-                return new SaveShape(entryRows, tileRows, shareRows, discoveryRows);
+                return new SaveShape(entryRows, tileRows, shareRows);
             }
     );
 

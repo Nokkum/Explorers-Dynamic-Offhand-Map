@@ -7,6 +7,7 @@ import com.explorermap.registry.ExplorerMapRegistry;
 import com.explorermap.waypoint.Waypoint;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.item.Items;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
@@ -66,13 +67,15 @@ public record WaypointSharePayload(int mapId, String waypointName, String target
         ServerPlayerEntity target = sender.getServer().getPlayerManager().getPlayer(payload.targetName());
         if (target == null || target == sender) return;
 
-        if (!savedData.consumeWaypointShareCharge(payload.mapId())) {
+        int compassSlot = findCompassSlot(sender);
+        if (compassSlot < 0) {
             ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] ShareWaypoint: {} has no waypoint share charge",
+                    "[ExplorerMap] ShareWaypoint: {} has no compass share charge",
                     sender.getName().getString());
             return;
         }
 
+        sender.getInventory().getStack(compassSlot).decrement(1);
         if (!savedData.grantWaypointShare(payload.mapId(), waypoint.name(), target.getUuid())) {
             return;
         }
@@ -84,4 +87,11 @@ public record WaypointSharePayload(int mapId, String waypointName, String target
                 waypoint.name(), sender.getName().getString(), target.getName().getString());
     }
 
+    private static int findCompassSlot(ServerPlayerEntity player) {
+        for (int i = 0; i < player.getInventory().size(); i++) {
+            if (player.getInventory().getStack(i).isOf(Items.COMPASS)
+                    && !player.getInventory().getStack(i).isEmpty()) return i;
+        }
+        return -1;
+    }
 }

@@ -51,11 +51,6 @@
 - Waypoint sharing — a shared waypoint only goes to its owner, intended recipients, and system-visible players.
 - High-detail expansion — it no longer auto-reveals the new title.
 - Old Saved-data stays backwards-compatible — old ownerless waypoints just load with an empty owner field.
-- Cartography-table integration
-- Per-player discovery storage and sharing 
-- Item frame and vanilla map interaction hooks 
-- Waypoint capacity model
-- Biome/Mod integration API
 
 <details>
 <summary>Configuration options:</summary>
@@ -68,7 +63,11 @@
 <details>
 <summary>Unimplemented:</summary>
 
-- No remaining items (currently)
+- Cartography-table integration
+- Per-player discovery storage and sharing
+- Item frame and vanilla map interaction hooks
+- Waypoint capacity model
+- Biome/Mod integration API
 </details>
 
 <details>
