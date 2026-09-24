@@ -30,6 +30,7 @@ public class FullMapScreen extends Screen {
     private static final int BASE_CANVAS = 512;
 
     private int mapId = -1;
+    private final int forcedMapId;
     private MapState mapState;
     private MapEntryData mapEntry;
 
@@ -48,7 +49,12 @@ public class FullMapScreen extends Screen {
     private int contextMenuX, contextMenuY;
 
     public FullMapScreen() {
+        this(-1);
+    }
+
+    public FullMapScreen(int mapId) {
         super(Text.translatable("screen.explorermap.full_map"));
+        this.forcedMapId = mapId;
     }
 
     private int canvasSize() { return Math.max(120, Math.min(BASE_CANVAS, Math.min(this.width, this.height) - 80)); }
@@ -102,6 +108,9 @@ public class FullMapScreen extends Screen {
 
         addDrawableChild(ButtonWidget.builder(Text.literal("+ Waypoint"),
                 btn -> client.setScreen(new WaypointEditScreen(this))).dimensions(cx + 318, toolY, 90, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.translatable("label.explorermap.share_discovery"),
+                btn -> client.setScreen(new DiscoveryShareScreen(this, mapId)))
+                .dimensions(cx + 318, toolY + 22, 90, 20).build());
 
         addDrawableChild(ButtonWidget.builder(Text.literal("X"),
                 btn -> this.close()).dimensions(cx + size - 20, toolY, 20, 20).build());
@@ -199,6 +208,10 @@ public class FullMapScreen extends Screen {
         ctx.drawTextWithShadow(this.textRenderer,
                 Text.translatable("explorermap.hud.explored", String.format("%.1f", frac * 100f)),
                 cx + 2, cy + size + 13, 0xFF888888);
+        String waypointCapacity = String.format("Waypoints %d/%d",
+                mapEntry.getWaypoints().size(), mapEntry.getWaypointCapacity());
+        ctx.drawTextWithShadow(this.textRenderer, waypointCapacity,
+                cx + 2, cy + size + 25, 0xFF888888);
 
         if (client.player != null) {
             String pos = String.format("X %.0f  Y %.0f  Z %.0f",
@@ -384,11 +397,15 @@ public class FullMapScreen extends Screen {
             mapId = -1; mapState = null; mapEntry = null; return;
         }
         ItemStack off = client.player.getStackInHand(Hand.OFF_HAND);
-        if (!ExplorerMapMod.isFilledMap(off)) {
+        if (forcedMapId >= 0) {
+            mapId = forcedMapId;
+        } else if (!ExplorerMapMod.isFilledMap(off)) {
             mapId = -1; mapState = null; mapEntry = null; return;
+        } else {
+            mapId = MapIdentity.rawIdOf(off);
         }
-        mapId    = MapIdentity.rawIdOf(off);
         mapState = MapIdentity.stateOf(off, client.world);
+        if (forcedMapId >= 0) mapState = MapIdentity.stateOf(forcedMapId, client.world);
         mapEntry = (mapState != null && mapId >= 0) ? ClientMapCache.getOrCreate(mapId) : null;
     }
 

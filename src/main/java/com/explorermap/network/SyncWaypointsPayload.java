@@ -24,7 +24,9 @@ import java.util.List;
 
 public record SyncWaypointsPayload(
         int mapId,
-        List<Waypoint> waypoints
+        List<Waypoint> waypoints,
+        int waypointCapacity,
+        int waypointShareCharges
 ) implements CustomPayload {
 
     private static final int MAX_WAYPOINTS = 512;
@@ -38,6 +40,8 @@ public record SyncWaypointsPayload(
                     SyncWaypointsPayload::mapId,
                     PacketCodecs.collection(ArrayList::new, PacketCodecs.codec(Waypoint.CODEC)),
                     SyncWaypointsPayload::waypoints,
+                    PacketCodecs.VAR_INT, SyncWaypointsPayload::waypointCapacity,
+                    PacketCodecs.VAR_INT, SyncWaypointsPayload::waypointShareCharges,
                     SyncWaypointsPayload::new
             );
 
@@ -45,9 +49,11 @@ public record SyncWaypointsPayload(
     public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
 
     public static void sendTo(ServerPlayerEntity player, int mapId) {
-        List<Waypoint> waypoints =
-                ExplorerMapSavedData.get(player.getServer()).visibleWaypoints(mapId, player.getUuid());
-        ServerPlayNetworking.send(player, new SyncWaypointsPayload(mapId, waypoints));
+        var savedData = ExplorerMapSavedData.get(player.getServer());
+        List<Waypoint> waypoints = savedData.visibleWaypoints(mapId, player.getUuid());
+        var entry = savedData.getOrCreate(mapId);
+        ServerPlayNetworking.send(player, new SyncWaypointsPayload(
+                mapId, waypoints, entry.getWaypointCapacity(), entry.getWaypointShareCharges()));
     }
 
     public static void broadcastTo(MinecraftServer server, int mapId) {
@@ -82,6 +88,7 @@ public record SyncWaypointsPayload(
 
         var mapEntry = ClientMapCache.getOrCreate(payload.mapId());
         mapEntry.replaceAllWaypoints(payload.waypoints());
+        mapEntry.setWaypointCapacity(payload.waypointCapacity(), payload.waypointShareCharges());
 
         ExplorerMapMod.LOGGER.debug("[ExplorerMap] Synced {} waypoints for map #{}",
                 payload.waypoints().size(), payload.mapId());

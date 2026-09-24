@@ -60,7 +60,8 @@ public final class SyncDiscoveryPayload {
             if (mapState == null) return;
 
             var savedData = ExplorerMapSavedData.get(server);
-            boolean changed = savedData.mergeBitmask(payload.mapId(), payload.bitmask());
+            boolean changed = savedData.mergePlayerBitmask(
+                    payload.mapId(), sender.getUuid(), payload.bitmask());
             if (!changed) return;
 
             ExplorerMapMod.LOGGER.debug("[ExplorerMap] Merged discovery for map #{} from {}",
@@ -69,15 +70,7 @@ public final class SyncDiscoveryPayload {
             MapEntryData entry = savedData.getOrCreate(payload.mapId());
             StructureWaypointDetector.checkAndPlace(server, sender, payload.mapId(), mapState, savedData);
 
-            byte[] merged = entry.getDiscoveredPixelsCopy();
-            var broadcast = new Broadcast(payload.mapId(), merged);
-            for (var player : server.getPlayerManager().getPlayerList()) {
-                var theirOffHand = player.getStackInHand(Hand.OFF_HAND);
-                if (ExplorerMapMod.isFilledMap(theirOffHand)
-                        && MapIdentity.rawIdOf(theirOffHand) == payload.mapId()) {
-                    ServerPlayNetworking.send(player, broadcast);
-                }
-            }
+            sendTo(sender, payload.mapId(), savedData);
         }
     }
 
@@ -114,8 +107,17 @@ public final class SyncDiscoveryPayload {
             if (mapState == null) return;
 
             var mapEntry = ClientMapCache.getOrCreate(payload.mapId());
-            mapEntry.mergeBitmask(payload.bitmask());
+            mapEntry.replaceBitmask(payload.bitmask());
         }
+    }
+
+    public static void sendTo(ServerPlayerEntity player, int mapId) {
+        sendTo(player, mapId, ExplorerMapSavedData.get(player.getServer()));
+    }
+
+    private static void sendTo(ServerPlayerEntity player, int mapId, ExplorerMapSavedData savedData) {
+        ServerPlayNetworking.send(player,
+                new Broadcast(mapId, savedData.getPlayerDiscovery(mapId, player.getUuid())));
     }
 
     public static final int UPLOAD_INTERVAL_TICKS = 60;
