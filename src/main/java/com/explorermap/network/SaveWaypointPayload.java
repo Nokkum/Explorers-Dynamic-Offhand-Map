@@ -14,7 +14,6 @@ import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
-import net.minecraft.item.Items;
 
 public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypoint) implements CustomPayload {
 
@@ -125,14 +124,13 @@ public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypo
         }
 
         boolean editing = previous != null;
-        int compassCount = countCompasses(player);
-        int waypointCapacity = compassCount * 5;
+        int waypointCapacity = entry.getWaypointCapacity();
         long ownedWaypointCount = entry.getWaypoints().stream()
                 .filter(wp -> wp.isOwnedBy(player.getUuid()))
                 .count();
         if (!editing && ownedWaypointCount >= waypointCapacity) {
             ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] SaveWaypoint: {} has reached waypoint capacity ({}/{}); a compass is required for every five waypoints",
+                    "[ExplorerMap] SaveWaypoint: {} has reached waypoint capacity ({}/{}); insert a compass at a cartography table to add five slots",
                     player.getName().getString(), ownedWaypointCount, waypointCapacity);
             SyncWaypointsPayload.sendTo(player, payload.mapId());
             return;
@@ -158,13 +156,5 @@ public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypo
                 payload.waypoint().name(), payload.mapId());
 
         SyncWaypointsPayload.broadcastTo(player.getServer(), payload.mapId());
-    }
-
-    private static int countCompasses(ServerPlayerEntity player) {
-        int count = 0;
-        for (int i = 0; i < player.getInventory().size(); i++) {
-            if (player.getInventory().getStack(i).isOf(Items.COMPASS)) count += player.getInventory().getStack(i).getCount();
-        }
-        return count;
     }
 }

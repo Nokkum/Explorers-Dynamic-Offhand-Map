@@ -19,6 +19,8 @@ public final class MapEntryData {
 
     private final List<ExpansionRecord> expansions;
     private final List<Waypoint> waypoints;
+    private int waypointCapacity;
+    private int waypointShareCharges;
 
     private transient long discoveryGeneration = 0L;
     private transient long visualGeneration = 0L;
@@ -28,6 +30,8 @@ public final class MapEntryData {
         this.recentPixels = new byte[PIXEL_COUNT];
         this.expansions = new ArrayList<>();
         this.waypoints = new ArrayList<>();
+        this.waypointCapacity = 0;
+        this.waypointShareCharges = 0;
     }
 
     private MapEntryData(byte[] discoveredPixels, List<ExpansionRecord> expansions, List<Waypoint> waypoints) {
@@ -36,6 +40,8 @@ public final class MapEntryData {
         this.recentPixels = new byte[PIXEL_COUNT];
         this.expansions = new ArrayList<>(expansions);
         this.waypoints = new ArrayList<>(waypoints);
+        this.waypointCapacity = 0;
+        this.waypointShareCharges = 0;
     }
 
     public boolean discover(int col, int row) {
@@ -130,6 +136,24 @@ public final class MapEntryData {
         return changed;
     }
 
+    public boolean replaceBitmask(byte[] replacement) {
+        boolean changed = false;
+        int n = Math.min(replacement.length, BYTE_COUNT);
+        for (int i = 0; i < BYTE_COUNT; i++) {
+            byte next = i < n ? replacement[i] : 0;
+            if (discoveredPixels[i] != next) {
+                discoveredPixels[i] = next;
+                changed = true;
+            }
+        }
+        if (changed) {
+            discoveryGeneration++;
+            visualGeneration++;
+            java.util.Arrays.fill(recentPixels, (byte) 0);
+        }
+        return changed;
+    }
+
     public List<ExpansionRecord> getExpansions() {
         return List.copyOf(expansions);
     }
@@ -160,6 +184,30 @@ public final class MapEntryData {
         waypoints.addAll(newList);
     }
 
+    public int getWaypointCapacity() {
+        return waypointCapacity;
+    }
+
+    public int getWaypointShareCharges() {
+        return waypointShareCharges;
+    }
+
+    public void setWaypointCapacity(int capacity, int shareCharges) {
+        waypointCapacity = Math.max(0, capacity);
+        waypointShareCharges = Math.max(0, shareCharges);
+    }
+
+    public void addWaypointCapacity() {
+        waypointCapacity += 5;
+        waypointShareCharges++;
+    }
+
+    public boolean consumeWaypointShareCharge() {
+        if (waypointShareCharges <= 0) return false;
+        waypointShareCharges--;
+        return true;
+    }
+
     private static final Codec<byte[]> BITMASK_CODEC = Codec.LONG.listOf().xmap(
             longs -> {
                 byte[] arr = new byte[BYTE_COUNT];
@@ -185,7 +233,14 @@ public final class MapEntryData {
             instance.group(
                     BITMASK_CODEC.fieldOf("discovered_pixels").forGetter(d -> d.discoveredPixels),
                     ExpansionRecord.CODEC.listOf().fieldOf("expansions").forGetter(d -> d.expansions),
-                    Waypoint.CODEC.listOf().fieldOf("waypoints").forGetter(d -> d.waypoints)
-            ).apply(instance, MapEntryData::new)
+                    Waypoint.CODEC.listOf().fieldOf("waypoints").forGetter(d -> d.waypoints),
+                    Codec.INT.optionalFieldOf("waypoint_capacity", 0).forGetter(d -> d.waypointCapacity),
+                    Codec.INT.optionalFieldOf("waypoint_share_charges", 0).forGetter(d -> d.waypointShareCharges)
+            ).apply(instance, (pixels, expansions, waypoints, capacity, shareCharges) -> {
+                MapEntryData data = new MapEntryData(pixels, expansions, waypoints);
+                data.waypointCapacity = Math.max(0, capacity);
+                data.waypointShareCharges = Math.max(0, shareCharges);
+                return data;
+            })
     );
 }
