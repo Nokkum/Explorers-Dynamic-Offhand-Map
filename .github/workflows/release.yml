@@ -66,7 +66,7 @@ jobs:
 
       - name: Download build artifact from CI run
         if: steps.tag_check.outputs.exists == 'false'
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: Build-Artifact-Output
           path: build/libs/

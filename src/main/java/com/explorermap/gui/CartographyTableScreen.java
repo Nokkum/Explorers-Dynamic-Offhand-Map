@@ -34,16 +34,14 @@ public final class CartographyTableScreen extends Screen {
         panelX = (width - 300) / 2;
         panelY = (height - 150) / 2;
 
-        boolean hasMap = client != null && client.player != null
-                && ExplorerMapMod.isFilledMap(client.player.getStackInHand(Hand.OFF_HAND));
-        boolean canExpand = hasMap && client.player != null
-                && ExpansionHandler.canExpand(client.player, highDetail);
+        var player = client != null ? client.player : null;
+        boolean hasMap = player != null && ExplorerMapMod.isFilledMap(player.getStackInHand(Hand.OFF_HAND));
+        boolean canExpand = hasMap && ExpansionHandler.canExpand(player, highDetail);
 
         int index = 0;
         for (ExpansionRecord.Direction direction : ExpansionRecord.Direction.values()) {
             final ExpansionRecord.Direction selected = direction;
-            boolean expanded = client.player != null
-                    && ExpansionHandler.alreadyExpanded(client.player, direction);
+            boolean expanded = player != null && ExpansionHandler.alreadyExpanded(player, direction);
             ButtonWidget button = ButtonWidget.builder(Text.literal(label(direction, expanded)),
                             clickedButton -> ClientPlayNetworking.send(
                                     new RequestExpansionPayload(selected, highDetail)))
