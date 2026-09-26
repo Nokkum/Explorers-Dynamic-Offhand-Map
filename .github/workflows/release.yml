@@ -34,7 +34,7 @@ jobs:
       - name: Read project version
         id: version
         run: |
-          VERSION=$(grep -E '^\s*version\s*=' gradle.properties | head -n1 | cut -d'=' -f2- | tr -d '[:space:]')
+          VERSION=$(grep -E '^\s*mod_version\s*=' gradle.properties | head -n1 | cut -d'=' -f2- | tr -d '[:space:]')
           if [ -z "$VERSION" ]; then
             echo "::error::Could not determine project version from gradle.properties."
             exit 1
