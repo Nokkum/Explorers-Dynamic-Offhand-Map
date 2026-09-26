@@ -49,6 +49,6 @@ jobs:
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v6
       with:
-        name: Fabric-Mod-Artifacts
+        name: Build-Artifact-Output
         path: build/libs/
         if-no-files-found: error

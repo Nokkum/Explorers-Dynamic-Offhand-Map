@@ -74,6 +74,7 @@
 <details>
 <summary>Never Implement:</summary>
 
-- Skipping chunk borders + light level (debug features).
+- Skipping chunk borders (debug feature, completely breaks immersion)
+- Skipping light level (debug feature/world feature. Doesn't fit right for a map)
 - Skipping biome name (debug feature + gets repetitive fast).
 </details>

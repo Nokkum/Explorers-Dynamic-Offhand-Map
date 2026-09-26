@@ -1,4 +1,4 @@
-<h1 align="center">Explorers-Dynamic-Offhand-Map</h1>
+<h1 align="center">Explorer's Dynamic Offhand Map</h1>
 
 
 ## **Figure 1 — System Architecture Overview**
