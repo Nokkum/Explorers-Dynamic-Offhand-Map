@@ -9,15 +9,15 @@ import java.util.Map;
 @Environment(EnvType.CLIENT)
 public final class ClientMapCache {
 
-    private static final Map<Integer, MapEntryData> ENTRIES = new HashMap<>();
+    private static final Map<MapIdentity, MapEntryData> ENTRIES = new HashMap<>();
 
     private ClientMapCache() {}
 
-    public static MapEntryData getOrCreate(int mapId) {
+    public static MapEntryData getOrCreate(MapIdentity mapId) {
         return ENTRIES.computeIfAbsent(mapId, k -> new MapEntryData());
     }
 
-    public static MapEntryData get(int mapId) {
+    public static MapEntryData get(MapIdentity mapId) {
         return ENTRIES.get(mapId);
     }
 

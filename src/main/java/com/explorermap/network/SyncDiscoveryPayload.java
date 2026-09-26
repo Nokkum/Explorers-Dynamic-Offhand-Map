@@ -13,7 +13,6 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.component.type.MapIdComponent;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
@@ -24,14 +23,14 @@ import net.minecraft.util.Hand;
 
 public final class SyncDiscoveryPayload {
 
-    public record Upload(int mapId, byte[] bitmask) implements CustomPayload {
+    public record Upload(MapIdentity mapId, byte[] bitmask) implements CustomPayload {
 
         public static final CustomPayload.Id<Upload> ID =
                 new CustomPayload.Id<>(ExplorerMapRegistry.id("upload_discovery"));
 
         public static final PacketCodec<PacketByteBuf, Upload> CODEC =
                 PacketCodec.tuple(
-                        PacketCodecs.VAR_INT, Upload::mapId,
+                        MapIdentity.PACKET_CODEC, Upload::mapId,
                         PacketCodecs.byteArray(MapEntryData.BYTE_COUNT), Upload::bitmask,
                         Upload::new
                 );
@@ -48,40 +47,45 @@ public final class SyncDiscoveryPayload {
 
             var offHand = sender.getStackInHand(Hand.OFF_HAND);
             if (!ExplorerMapMod.isFilledMap(offHand)) return;
-            if (MapIdentity.rawIdOf(offHand) != payload.mapId()) {
+
+            var mapState = MapIdentity.resolveAndVerify(sender.getServerWorld(), payload.mapId());
+            if (mapState == null) {
                 ExplorerMapMod.LOGGER.warn(
-                        "[ExplorerMap] Rejected discovery upload for map #{} from {} - not holding that map",
-                        payload.mapId(), sender.getName().getString());
+                        "[ExplorerMap] Rejected discovery upload for map {} from {} - map does not exist "
+                                + "or its dimension does not match the claim",
+                        payload.mapId().asKey(), sender.getName().getString());
                 return;
             }
 
-            var world    = sender.getServerWorld();
-            var mapState = world.getMapState(new MapIdComponent(payload.mapId()));
-            if (mapState == null) return;
+            if (MapIdentity.rawIdOf(offHand) != payload.mapId().mapId()) {
+                ExplorerMapMod.LOGGER.warn(
+                        "[ExplorerMap] Rejected discovery upload for map {} from {} - not holding that map",
+                        payload.mapId().asKey(), sender.getName().getString());
+                return;
+            }
 
             var savedData = ExplorerMapSavedData.get(server);
             boolean changed = savedData.mergePlayerBitmask(
                     payload.mapId(), sender.getUuid(), payload.bitmask());
             if (!changed) return;
 
-            ExplorerMapMod.LOGGER.debug("[ExplorerMap] Merged discovery for map #{} from {}",
-                    payload.mapId(), sender.getName().getString());
+            ExplorerMapMod.LOGGER.debug("[ExplorerMap] Merged discovery for map {} from {}",
+                    payload.mapId().asKey(), sender.getName().getString());
 
-            MapEntryData entry = savedData.getOrCreate(payload.mapId());
             StructureWaypointDetector.checkAndPlace(server, sender, payload.mapId(), mapState, savedData);
 
             sendTo(sender, payload.mapId(), savedData);
         }
     }
 
-    public record Broadcast(int mapId, byte[] bitmask) implements CustomPayload {
+    public record Broadcast(MapIdentity mapId, byte[] bitmask) implements CustomPayload {
 
         public static final CustomPayload.Id<Broadcast> ID =
                 new CustomPayload.Id<>(ExplorerMapRegistry.id("broadcast_discovery"));
 
         public static final PacketCodec<PacketByteBuf, Broadcast> CODEC =
                 PacketCodec.tuple(
-                        PacketCodecs.VAR_INT, Broadcast::mapId,
+                        MapIdentity.PACKET_CODEC, Broadcast::mapId,
                         PacketCodecs.byteArray(MapEntryData.BYTE_COUNT), Broadcast::bitmask,
                         Broadcast::new
                 );
@@ -103,7 +107,7 @@ public final class SyncDiscoveryPayload {
             var client = MinecraftClient.getInstance();
             if (client.world == null) return;
 
-            var mapState = MapIdentity.stateOf(payload.mapId(), client.world);
+            var mapState = MapIdentity.stateOf(payload.mapId().mapId(), client.world);
             if (mapState == null) return;
 
             var mapEntry = ClientMapCache.getOrCreate(payload.mapId());
@@ -111,11 +115,11 @@ public final class SyncDiscoveryPayload {
         }
     }
 
-    public static void sendTo(ServerPlayerEntity player, int mapId) {
+    public static void sendTo(ServerPlayerEntity player, MapIdentity mapId) {
         sendTo(player, mapId, ExplorerMapSavedData.get(player.getServer()));
     }
 
-    private static void sendTo(ServerPlayerEntity player, int mapId, ExplorerMapSavedData savedData) {
+    private static void sendTo(ServerPlayerEntity player, MapIdentity mapId, ExplorerMapSavedData savedData) {
         ServerPlayNetworking.send(player,
                 new Broadcast(mapId, savedData.getPlayerDiscovery(mapId, player.getUuid())));
     }

@@ -2,6 +2,7 @@ package com.explorermap.interaction;
 
 import com.explorermap.ExplorerMapClient;
 import com.explorermap.ExplorerMapMod;
+import com.explorermap.data.MapIdentity;
 import com.explorermap.gui.FullMapScreen;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -36,9 +37,11 @@ public final class ExplorerMapClientInteractions {
             if (world.isClient
                     && (hand == Hand.OFF_HAND || hand == Hand.MAIN_HAND)
                     && ExplorerMapMod.isFilledMap(stack)) {
-                MinecraftClient.getInstance().setScreen(new FullMapScreen(
-                        com.explorermap.data.MapIdentity.rawIdOf(stack)));
-                return TypedActionResult.success(stack, true);
+                MapIdentity mapId = MapIdentity.ofStack(stack, world);
+                if (mapId != null) {
+                    MinecraftClient.getInstance().setScreen(new FullMapScreen(mapId));
+                    return TypedActionResult.success(stack, true);
+                }
             }
             return TypedActionResult.pass(stack);
         });
@@ -48,9 +51,11 @@ public final class ExplorerMapClientInteractions {
                     && hand == Hand.MAIN_HAND
                     && player.getStackInHand(hand).isEmpty()
                     && ExplorerMapMod.isFilledMap(frame.getHeldItemStack())) {
-                MinecraftClient.getInstance().setScreen(new FullMapScreen(
-                        com.explorermap.data.MapIdentity.rawIdOf(frame.getHeldItemStack())));
-                return ActionResult.SUCCESS;
+                MapIdentity mapId = MapIdentity.ofStack(frame.getHeldItemStack(), world);
+                if (mapId != null) {
+                    MinecraftClient.getInstance().setScreen(new FullMapScreen(mapId));
+                    return ActionResult.SUCCESS;
+                }
             }
             return ActionResult.PASS;
         });

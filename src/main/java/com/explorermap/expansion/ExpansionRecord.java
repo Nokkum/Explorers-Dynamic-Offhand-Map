@@ -1,12 +1,13 @@
 package com.explorermap.expansion;
 
+import com.explorermap.data.MapIdentity;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import io.netty.handler.codec.DecoderException;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 
-public record ExpansionRecord(Direction direction, int mapId, boolean highDetail) {
+public record ExpansionRecord(Direction direction, MapIdentity target, boolean highDetail) {
 
     public enum Direction {
         NORTH, SOUTH, EAST, WEST;
@@ -30,7 +31,7 @@ public record ExpansionRecord(Direction direction, int mapId, boolean highDetail
     public static final Codec<ExpansionRecord> CODEC = RecordCodecBuilder.create(instance ->
             instance.group(
                     Direction.CODEC.fieldOf("direction").forGetter(ExpansionRecord::direction),
-                    Codec.INT.fieldOf("map_id").forGetter(ExpansionRecord::mapId),
+                    MapIdentity.CODEC.fieldOf("target").forGetter(ExpansionRecord::target),
                     Codec.BOOL.fieldOf("high_detail").forGetter(ExpansionRecord::highDetail)
             ).apply(instance, ExpansionRecord::new)
     );

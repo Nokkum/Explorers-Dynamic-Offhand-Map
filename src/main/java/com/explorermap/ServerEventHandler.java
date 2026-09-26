@@ -13,11 +13,12 @@ import net.minecraft.util.Hand;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 public final class ServerEventHandler {
 
-    private static final Map<UUID, Integer> LAST_OFFHAND_MAP = new HashMap<>();
+    private static final Map<UUID, MapIdentity> LAST_OFFHAND_MAP = new HashMap<>();
     private static int tickCounter;
 
     private ServerEventHandler() {}
@@ -34,10 +35,10 @@ public final class ServerEventHandler {
             if (++tickCounter % 10 != 0) return;
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                 ItemStack offHand = player.getStackInHand(Hand.OFF_HAND);
-                int mapId = ExplorerMapMod.isFilledMap(offHand)
-                        ? MapIdentity.rawIdOf(offHand) : -1;
-                Integer previous = LAST_OFFHAND_MAP.put(player.getUuid(), mapId);
-                if (previous == null || previous != mapId) {
+                MapIdentity mapId = ExplorerMapMod.isFilledMap(offHand)
+                        ? MapIdentity.ofStack(offHand, player.getServerWorld()) : null;
+                MapIdentity previous = LAST_OFFHAND_MAP.put(player.getUuid(), mapId);
+                if (!Objects.equals(previous, mapId)) {
                     syncMapForPlayer(player, offHand);
                 }
             }
@@ -54,11 +55,11 @@ public final class ServerEventHandler {
     private static void syncMapForPlayer(ServerPlayerEntity player, ItemStack stack) {
         if (!ExplorerMapMod.isFilledMap(stack)) return;
 
-        int mapId = MapIdentity.rawIdOf(stack);
-        if (mapId < 0) return;
+        var world  = player.getServerWorld();
+        MapIdentity mapId = MapIdentity.ofStack(stack, world);
+        if (mapId == null) return;
 
-        var world    = player.getServerWorld();
-        var mapState = MapIdentity.stateOf(stack, world);
+        var mapState = MapIdentity.stateOf(mapId.mapId(), world);
         if (mapState == null) return;
 
         SyncWaypointsPayload.sendTo(player, mapId);
@@ -68,6 +69,6 @@ public final class ServerEventHandler {
         StructureWaypointDetector.checkAndPlace(player.getServer(), player, mapId, mapState, savedData);
 
         ExplorerMapMod.LOGGER.debug(
-                "[ExplorerMap] Join-sync map #{} for {}", mapId, player.getName().getString());
+                "[ExplorerMap] Join-sync map {} for {}", mapId.asKey(), player.getName().getString());
     }
 }

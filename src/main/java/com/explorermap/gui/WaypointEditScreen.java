@@ -22,6 +22,7 @@ import com.explorermap.network.SaveWaypointPayload;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Environment(EnvType.CLIENT)
 public class WaypointEditScreen extends Screen {
@@ -48,7 +49,7 @@ public class WaypointEditScreen extends Screen {
 
     private final Screen parent;
     private final Waypoint editingWaypoint;
-    private final int editingMapId;
+    private final MapIdentity editingMapId;
 
     private TextFieldWidget nameField;
     private List<String>    iconIds = new ArrayList<>();
@@ -61,14 +62,14 @@ public class WaypointEditScreen extends Screen {
     private int previewX, previewY;
 
     public WaypointEditScreen(Screen parent) {
-        this(parent, null, -1);
+        this(parent, null, null);
     }
 
     public WaypointEditScreen(Screen parent, Waypoint existing) {
-        this(parent, existing, -1);
+        this(parent, existing, null);
     }
 
-    public WaypointEditScreen(Screen parent, Waypoint existing, int owningMapId) {
+    public WaypointEditScreen(Screen parent, Waypoint existing, MapIdentity owningMapId) {
         super(Text.translatable("screen.explorermap.waypoint_edit"));
         this.parent          = parent;
         this.editingWaypoint = existing;
@@ -231,10 +232,14 @@ public class WaypointEditScreen extends Screen {
             wz = client.player.getZ();
         }
 
-        Waypoint wp = new Waypoint(name, wx, wz, iconId, color);
+        UUID id = editingWaypoint != null ? editingWaypoint.id() : UUID.randomUUID();
+        String ownerUuid = editingWaypoint != null
+                ? editingWaypoint.ownerUuid()
+                : client.player.getUuid().toString();
+        Waypoint wp = new Waypoint(id, name, wx, wz, iconId, color, ownerUuid);
 
-        int mapId;
-        if (editingWaypoint != null && editingMapId >= 0) {
+        MapIdentity mapId;
+        if (editingWaypoint != null && editingMapId != null) {
             mapId = editingMapId;
         } else {
             var offHand = client.player.getStackInHand(Hand.OFF_HAND);
@@ -242,10 +247,11 @@ public class WaypointEditScreen extends Screen {
                 client.setScreen(parent);
                 return;
             }
-            int rootMapId = MapIdentity.rawIdOf(offHand);
-            if (rootMapId < 0) { client.setScreen(parent); return; }
             var rootMapState = MapIdentity.stateOf(offHand, client.world);
             if (rootMapState == null) { client.setScreen(parent); return; }
+            int rawRootMapId = MapIdentity.rawIdOf(offHand);
+            if (rawRootMapId < 0) { client.setScreen(parent); return; }
+            MapIdentity rootMapId = MapIdentity.of(rootMapState, rawRootMapId);
 
             var rootEntry = ClientMapCache.getOrCreate(rootMapId);
             var grid = TileGrid.build(rootMapId, rootMapState, rootEntry, client.world);
@@ -253,15 +259,12 @@ public class WaypointEditScreen extends Screen {
             var owningTile = grid.findTileContaining(canvas, wx, wz);
             mapId = owningTile != null ? owningTile.mapId() : rootMapId;
         }
-        if (mapId < 0) { client.setScreen(parent); return; }
-
-        String previousName = editingWaypoint != null ? editingWaypoint.name() : "";
+        if (mapId == null) { client.setScreen(parent); return; }
 
         var mapEntry = ClientMapCache.getOrCreate(mapId);
-        if (editingWaypoint != null) mapEntry.removeWaypoint(editingWaypoint.name());
         mapEntry.addWaypoint(wp);
 
-        ClientPlayNetworking.send(new SaveWaypointPayload(mapId, previousName, wp));
+        ClientPlayNetworking.send(new SaveWaypointPayload(mapId, wp));
 
         client.setScreen(parent);
     }

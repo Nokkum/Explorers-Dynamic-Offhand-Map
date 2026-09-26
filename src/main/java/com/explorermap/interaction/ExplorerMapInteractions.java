@@ -29,7 +29,6 @@ public final class ExplorerMapInteractions {
                     && hand == Hand.MAIN_HAND
                     && player.getStackInHand(hand).isEmpty()
                     && ExplorerMapMod.isFilledMap(frame.getHeldItemStack())) {
-                // A framed map is a display/inspection surface, not an editable map item.
                 return ActionResult.SUCCESS;
             }
             return ActionResult.PASS;

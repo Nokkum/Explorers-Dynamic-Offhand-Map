@@ -17,7 +17,7 @@ import net.minecraft.util.Hand;
 
 public record GrantExpansionPayload(
         ExpansionRecord.Direction direction,
-        int mapId,
+        MapIdentity mapId,
         boolean highDetail
 ) implements CustomPayload {
 
@@ -27,7 +27,7 @@ public record GrantExpansionPayload(
     public static final PacketCodec<PacketByteBuf, GrantExpansionPayload> CODEC =
             PacketCodec.tuple(
                     ExpansionRecord.Direction.PACKET_CODEC, GrantExpansionPayload::direction,
-                    PacketCodecs.VAR_INT,  GrantExpansionPayload::mapId,
+                    MapIdentity.PACKET_CODEC,  GrantExpansionPayload::mapId,
                     PacketCodecs.BOOL,     GrantExpansionPayload::highDetail,
                     GrantExpansionPayload::new
             );
@@ -49,18 +49,15 @@ public record GrantExpansionPayload(
         var offHand = client.player.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) return;
 
-        var mapState = MapIdentity.stateOf(offHand, client.world);
-        if (mapState == null) return;
+        MapIdentity heldMapId = MapIdentity.ofStack(offHand, client.world);
+        if (heldMapId == null) return;
 
-        int mapId = MapIdentity.rawIdOf(offHand);
-        if (mapId < 0) return;
-
-        var mapEntry = ClientMapCache.getOrCreate(mapId);
+        var mapEntry = ClientMapCache.getOrCreate(heldMapId);
         if (!mapEntry.hasExpansion(payload.direction())) {
             mapEntry.addExpansion(new ExpansionRecord(
                     payload.direction(), payload.mapId(), payload.highDetail()));
-            ExplorerMapMod.LOGGER.info("[ExplorerMap] Expansion granted: {} -> map #{} (HD:{})",
-                    payload.direction(), payload.mapId(), payload.highDetail());
+            ExplorerMapMod.LOGGER.info("[ExplorerMap] Expansion granted: {} -> map {} (HD:{})",
+                    payload.direction(), payload.mapId().asKey(), payload.highDetail());
         }
     }
 }

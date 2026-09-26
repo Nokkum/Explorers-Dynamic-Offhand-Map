@@ -1,5 +1,6 @@
 package com.explorermap.gui;
 
+import com.explorermap.data.MapIdentity;
 import com.explorermap.network.ShareDiscoveryPayload;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -14,12 +15,12 @@ import net.minecraft.text.Text;
 public final class DiscoveryShareScreen extends Screen {
 
     private final Screen parent;
-    private final int mapId;
+    private final MapIdentity mapId;
     private TextFieldWidget playerName;
     private int boxX;
     private int boxY;
 
-    public DiscoveryShareScreen(Screen parent, int mapId) {
+    public DiscoveryShareScreen(Screen parent, MapIdentity mapId) {
         super(Text.translatable("screen.explorermap.discovery_share"));
         this.parent = parent;
         this.mapId = mapId;

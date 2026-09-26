@@ -23,7 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public record SyncWaypointsPayload(
-        int mapId,
+        MapIdentity mapId,
         List<Waypoint> waypoints,
         int waypointCapacity,
         int waypointShareCharges
@@ -36,7 +36,7 @@ public record SyncWaypointsPayload(
 
     public static final PacketCodec<PacketByteBuf, SyncWaypointsPayload> CODEC =
             PacketCodec.tuple(
-                    PacketCodecs.VAR_INT,
+                    MapIdentity.PACKET_CODEC,
                     SyncWaypointsPayload::mapId,
                     PacketCodecs.collection(ArrayList::new, PacketCodecs.codec(Waypoint.CODEC)),
                     SyncWaypointsPayload::waypoints,
@@ -48,7 +48,7 @@ public record SyncWaypointsPayload(
     @Override
     public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
 
-    public static void sendTo(ServerPlayerEntity player, int mapId) {
+    public static void sendTo(ServerPlayerEntity player, MapIdentity mapId) {
         var savedData = ExplorerMapSavedData.get(player.getServer());
         List<Waypoint> waypoints = savedData.visibleWaypoints(mapId, player.getUuid());
         var entry = savedData.getOrCreate(mapId);
@@ -56,11 +56,11 @@ public record SyncWaypointsPayload(
                 mapId, waypoints, entry.getWaypointCapacity(), entry.getWaypointShareCharges()));
     }
 
-    public static void broadcastTo(MinecraftServer server, int mapId) {
+    public static void broadcastTo(MinecraftServer server, MapIdentity mapId) {
         for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
             var offHand = p.getStackInHand(Hand.OFF_HAND);
             if (!ExplorerMapMod.isFilledMap(offHand)) continue;
-            if (MapIdentity.rawIdOf(offHand) == mapId) {
+            if (MapIdentity.rawIdOf(offHand) == mapId.mapId()) {
                 sendTo(p, mapId);
             }
         }
@@ -83,14 +83,14 @@ public record SyncWaypointsPayload(
         var client = MinecraftClient.getInstance();
         if (client.world == null) return;
 
-        var mapState = MapIdentity.stateOf(payload.mapId(), client.world);
+        var mapState = MapIdentity.stateOf(payload.mapId().mapId(), client.world);
         if (mapState == null) return;
 
         var mapEntry = ClientMapCache.getOrCreate(payload.mapId());
         mapEntry.replaceAllWaypoints(payload.waypoints());
         mapEntry.setWaypointCapacity(payload.waypointCapacity(), payload.waypointShareCharges());
 
-        ExplorerMapMod.LOGGER.debug("[ExplorerMap] Synced {} waypoints for map #{}",
-                payload.waypoints().size(), payload.mapId());
+        ExplorerMapMod.LOGGER.debug("[ExplorerMap] Synced {} waypoints for map {}",
+                payload.waypoints().size(), payload.mapId().asKey());
     }
 }

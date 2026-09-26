@@ -1,5 +1,6 @@
 package com.explorermap.gui;
 
+import com.explorermap.data.MapIdentity;
 import com.explorermap.network.WaypointSharePayload;
 import com.explorermap.waypoint.Waypoint;
 import net.fabricmc.api.EnvType;
@@ -15,13 +16,13 @@ import net.minecraft.text.Text;
 public class WaypointShareScreen extends Screen {
 
     private final Screen parent;
-    private final int mapId;
+    private final MapIdentity mapId;
     private final Waypoint waypoint;
     private TextFieldWidget playerName;
     private int boxX;
     private int boxY;
 
-    public WaypointShareScreen(Screen parent, int mapId, Waypoint waypoint) {
+    public WaypointShareScreen(Screen parent, MapIdentity mapId, Waypoint waypoint) {
         super(Text.translatable("screen.explorermap.waypoint_share"));
         this.parent = parent;
         this.mapId = mapId;
@@ -51,7 +52,7 @@ public class WaypointShareScreen extends Screen {
     private void share() {
         String target = playerName.getText().trim();
         if (target.isEmpty() || client == null) return;
-        ClientPlayNetworking.send(new WaypointSharePayload(mapId, waypoint.name(), target));
+        ClientPlayNetworking.send(new WaypointSharePayload(mapId, waypoint.id(), target));
         client.setScreen(parent);
     }
 

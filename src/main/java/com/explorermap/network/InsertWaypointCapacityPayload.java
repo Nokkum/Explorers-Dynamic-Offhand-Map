@@ -46,8 +46,8 @@ public record InsertWaypointCapacityPayload(BlockPos tablePos) implements Custom
 
         var map = player.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(map)) return;
-        int mapId = MapIdentity.rawIdOf(map);
-        if (mapId < 0) return;
+        MapIdentity mapId = MapIdentity.ofStack(map, player.getServerWorld());
+        if (mapId == null) return;
 
         int compassSlot = -1;
         for (int i = 0; i < player.getInventory().size(); i++) {

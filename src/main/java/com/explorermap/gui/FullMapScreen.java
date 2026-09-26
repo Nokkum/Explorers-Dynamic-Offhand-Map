@@ -29,8 +29,8 @@ public class FullMapScreen extends Screen {
 
     private static final int BASE_CANVAS = 512;
 
-    private int mapId = -1;
-    private final int forcedMapId;
+    private MapIdentity mapId;
+    private final MapIdentity forcedMapId;
     private MapState mapState;
     private MapEntryData mapEntry;
 
@@ -45,14 +45,14 @@ public class FullMapScreen extends Screen {
     private long coordinatePopupUntil;
 
     private Waypoint contextMenuWaypoint;
-    private int contextMenuMapId = -1;
+    private MapIdentity contextMenuMapId;
     private int contextMenuX, contextMenuY;
 
     public FullMapScreen() {
-        this(-1);
+        this(null);
     }
 
-    public FullMapScreen(int mapId) {
+    public FullMapScreen(MapIdentity mapId) {
         super(Text.translatable("screen.explorermap.full_map"));
         this.forcedMapId = mapId;
     }
@@ -264,7 +264,7 @@ public class FullMapScreen extends Screen {
         return super.mouseClicked(mx, my, button);
     }
 
-    private record WaypointHit(Waypoint waypoint, int mapId) {}
+    private record WaypointHit(Waypoint waypoint, MapIdentity mapId) {}
 
     private WaypointHit findWaypointNear(double mx, double my) {
         if (mapEntry == null || mapState == null || client == null || client.world == null) return null;
@@ -300,7 +300,7 @@ public class FullMapScreen extends Screen {
                 Text.translatable("label.explorermap.edit_waypoint"),
                 b -> {
                     Waypoint toEdit = contextMenuWaypoint;
-                    int owningMapId = contextMenuMapId;
+                    MapIdentity owningMapId = contextMenuMapId;
                     closeContextMenu();
                     if (client != null) client.setScreen(new WaypointEditScreen(this, toEdit, owningMapId));
                 }
@@ -318,7 +318,7 @@ public class FullMapScreen extends Screen {
                 Text.translatable("label.explorermap.share_waypoint"),
                 b -> {
                     Waypoint toShare = contextMenuWaypoint;
-                    int owningMapId = contextMenuMapId;
+                    MapIdentity owningMapId = contextMenuMapId;
                     closeContextMenu();
                     if (client != null) {
                         client.setScreen(new WaypointShareScreen(this, owningMapId, toShare));
@@ -327,22 +327,22 @@ public class FullMapScreen extends Screen {
         ).dimensions(contextMenuX, contextMenuY + 40, 90, 18).build());
     }
 
-    private void deleteWaypoint(Waypoint wp, int owningMapId) {
-        if (client == null || client.player == null || owningMapId < 0) return;
+    private void deleteWaypoint(Waypoint wp, MapIdentity owningMapId) {
+        if (client == null || client.player == null || owningMapId == null) return;
 
         var entry = ClientMapCache.get(owningMapId);
-        if (entry != null) entry.removeWaypoint(wp.name());
+        if (entry != null) entry.removeWaypoint(wp.id());
 
         ItemStack offHand = client.player.getStackInHand(Hand.OFF_HAND);
         if (ExplorerMapMod.isFilledMap(offHand)) {
-            ClientPlayNetworking.send(new DeleteWaypointPayload(owningMapId, wp.name()));
+            ClientPlayNetworking.send(new DeleteWaypointPayload(owningMapId, wp.id()));
         }
     }
 
     private void closeContextMenu() {
         if (contextMenuWaypoint != null) {
             contextMenuWaypoint = null;
-            contextMenuMapId = -1;
+            contextMenuMapId = null;
             this.clearChildren();
             this.init();
         }
@@ -394,19 +394,20 @@ public class FullMapScreen extends Screen {
 
     private void resolveMap() {
         if (client == null || client.player == null || client.world == null) {
-            mapId = -1; mapState = null; mapEntry = null; return;
+            mapId = null; mapState = null; mapEntry = null; return;
         }
-        ItemStack off = client.player.getStackInHand(Hand.OFF_HAND);
-        if (forcedMapId >= 0) {
+        if (forcedMapId != null) {
             mapId = forcedMapId;
-        } else if (!ExplorerMapMod.isFilledMap(off)) {
-            mapId = -1; mapState = null; mapEntry = null; return;
+            mapState = MapIdentity.stateOf(forcedMapId.mapId(), client.world);
         } else {
-            mapId = MapIdentity.rawIdOf(off);
+            ItemStack off = client.player.getStackInHand(Hand.OFF_HAND);
+            if (!ExplorerMapMod.isFilledMap(off)) {
+                mapId = null; mapState = null; mapEntry = null; return;
+            }
+            mapState = MapIdentity.stateOf(off, client.world);
+            mapId = mapState != null ? MapIdentity.of(mapState, MapIdentity.rawIdOf(off)) : null;
         }
-        mapState = MapIdentity.stateOf(off, client.world);
-        if (forcedMapId >= 0) mapState = MapIdentity.stateOf(forcedMapId, client.world);
-        mapEntry = (mapState != null && mapId >= 0) ? ClientMapCache.getOrCreate(mapId) : null;
+        mapEntry = (mapState != null && mapId != null) ? ClientMapCache.getOrCreate(mapId) : null;
     }
 
     @Override public boolean shouldPause() { return false; }

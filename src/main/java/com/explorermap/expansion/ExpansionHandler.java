@@ -43,10 +43,10 @@ public final class ExpansionHandler {
         MapState state = MapIdentity.stateOf(offHand, player.getWorld());
         if (state == null) return false;
 
-        int mapId = MapIdentity.rawIdOf(offHand);
-        if (mapId < 0) return false;
+        int rawMapId = MapIdentity.rawIdOf(offHand);
+        if (rawMapId < 0) return false;
 
-        var entry = ClientMapCache.get(mapId);
+        var entry = ClientMapCache.get(MapIdentity.of(state, rawMapId));
         return entry != null && entry.hasExpansion(direction);
     }
 }

@@ -6,7 +6,10 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 public final class MapEntryData {
 
@@ -14,8 +17,16 @@ public final class MapEntryData {
     public static final int PIXEL_COUNT = MAP_SIZE * MAP_SIZE;
     public static final int BYTE_COUNT  = PIXEL_COUNT / 8;
 
+    private static final int MAX_WAYPOINT_NAME_LENGTH = 64;
+    private static final int MAX_ICON_ID_LENGTH = 128;
+    private static final int MAX_WAYPOINTS_ON_LOAD = 4096;
+    private static final int MAX_EXPANSIONS_ON_LOAD = 4096;
+
     private final byte[] discoveredPixels;
     private transient byte[] recentPixels;
+    private transient boolean hasFadingPixels = false;
+
+    private transient final Set<Long> processedStructureChunks = new HashSet<>();
 
     private final List<ExpansionRecord> expansions;
     private final List<Waypoint> waypoints;
@@ -53,6 +64,7 @@ public final class MapEntryData {
         int pixel = row * MAP_SIZE + col;
         boolean refreshed = (recentPixels[pixel] & 0xFF) < 255;
         recentPixels[pixel] = (byte) 0xFF;
+        hasFadingPixels = true;
         if (discoveredPixels[idx] != before) {
             discoveryGeneration++;
             visualGeneration++;
@@ -73,6 +85,7 @@ public final class MapEntryData {
             discoveryGeneration++;
             visualGeneration++;
             java.util.Arrays.fill(recentPixels, (byte) 0xFF);
+            hasFadingPixels = true;
         }
         return changed;
     }
@@ -107,14 +120,19 @@ public final class MapEntryData {
     }
 
     public boolean tickRecency() {
+        if (!hasFadingPixels) return false;
         boolean changed = false;
+        boolean anyRemaining = false;
         for (int i = 0; i < recentPixels.length; i++) {
             int value = recentPixels[i] & 0xFF;
             if (value == 0) continue;
-            recentPixels[i] = (byte) Math.max(0, value - 2);
+            int next = Math.max(0, value - 2);
+            recentPixels[i] = (byte) next;
             changed = true;
+            if (next != 0) anyRemaining = true;
         }
         if (changed) visualGeneration++;
+        hasFadingPixels = anyRemaining;
         return changed;
     }
 
@@ -131,6 +149,7 @@ public final class MapEntryData {
                 for (int bit = 0; bit < 8; bit++) {
                     if ((other[i] & (1 << bit)) != 0) recentPixels[i * 8 + bit] = (byte) 0xFF;
                 }
+                hasFadingPixels = true;
             }
         }
         return changed;
@@ -150,6 +169,7 @@ public final class MapEntryData {
             discoveryGeneration++;
             visualGeneration++;
             java.util.Arrays.fill(recentPixels, (byte) 0);
+            hasFadingPixels = false;
         }
         return changed;
     }
@@ -170,13 +190,22 @@ public final class MapEntryData {
         return List.copyOf(waypoints);
     }
 
+    public Waypoint findWaypoint(UUID id) {
+        if (id == null) return null;
+        for (Waypoint wp : waypoints) {
+            if (wp.id().equals(id)) return wp;
+        }
+        return null;
+    }
+
     public void addWaypoint(Waypoint wp) {
-        waypoints.removeIf(existing -> existing.name().equals(wp.name()));
+        waypoints.removeIf(existing -> existing.id().equals(wp.id()));
         waypoints.add(wp);
     }
 
-    public void removeWaypoint(String name) {
-        waypoints.removeIf(wp -> wp.name().equals(name));
+    public void removeWaypoint(UUID id) {
+        if (id == null) return;
+        waypoints.removeIf(wp -> wp.id().equals(id));
     }
 
     public void replaceAllWaypoints(List<Waypoint> newList) {
@@ -208,6 +237,14 @@ public final class MapEntryData {
         return true;
     }
 
+    public boolean markStructureChunkProcessed(long chunkPosLong) {
+        return processedStructureChunks.add(chunkPosLong);
+    }
+
+    public void unmarkStructureChunkProcessed(long chunkPosLong) {
+        processedStructureChunks.remove(chunkPosLong);
+    }
+
     private static final Codec<byte[]> BITMASK_CODEC = Codec.LONG.listOf().xmap(
             longs -> {
                 byte[] arr = new byte[BYTE_COUNT];
@@ -229,6 +266,14 @@ public final class MapEntryData {
             }
     );
 
+    private static boolean isValidOnLoad(Waypoint wp) {
+        if (wp == null || wp.id() == null) return false;
+        if (wp.name() == null || wp.name().isBlank() || wp.name().length() > MAX_WAYPOINT_NAME_LENGTH) return false;
+        if (wp.iconId() == null || wp.iconId().isBlank() || wp.iconId().length() > MAX_ICON_ID_LENGTH) return false;
+        if (!Double.isFinite(wp.worldX()) || !Double.isFinite(wp.worldZ())) return false;
+        return true;
+    }
+
     public static final Codec<MapEntryData> CODEC = RecordCodecBuilder.create(instance ->
             instance.group(
                     BITMASK_CODEC.fieldOf("discovered_pixels").forGetter(d -> d.discoveredPixels),
@@ -237,7 +282,19 @@ public final class MapEntryData {
                     Codec.INT.optionalFieldOf("waypoint_capacity", 0).forGetter(d -> d.waypointCapacity),
                     Codec.INT.optionalFieldOf("waypoint_share_charges", 0).forGetter(d -> d.waypointShareCharges)
             ).apply(instance, (pixels, expansions, waypoints, capacity, shareCharges) -> {
-                MapEntryData data = new MapEntryData(pixels, expansions, waypoints);
+                List<ExpansionRecord> safeExpansions = expansions.size() > MAX_EXPANSIONS_ON_LOAD
+                        ? expansions.subList(0, MAX_EXPANSIONS_ON_LOAD) : expansions;
+
+                List<Waypoint> safeWaypoints = new ArrayList<>(Math.min(waypoints.size(), MAX_WAYPOINTS_ON_LOAD));
+                Set<UUID> seenIds = new HashSet<>();
+                for (Waypoint wp : waypoints) {
+                    if (safeWaypoints.size() >= MAX_WAYPOINTS_ON_LOAD) break;
+                    if (!isValidOnLoad(wp)) continue;
+                    if (!seenIds.add(wp.id())) continue; // duplicate id on disk - keep the first occurrence
+                    safeWaypoints.add(wp);
+                }
+
+                MapEntryData data = new MapEntryData(pixels, safeExpansions, safeWaypoints);
                 data.waypointCapacity = Math.max(0, capacity);
                 data.waypointShareCharges = Math.max(0, shareCharges);
                 return data;

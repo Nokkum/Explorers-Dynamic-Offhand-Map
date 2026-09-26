@@ -7,7 +7,6 @@ import com.explorermap.registry.ExplorerMapRegistry;
 import com.explorermap.waypoint.Waypoint;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.component.type.MapIdComponent;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
@@ -15,7 +14,9 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
 
-public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypoint) implements CustomPayload {
+import java.util.UUID;
+
+public record SaveWaypointPayload(MapIdentity mapId, Waypoint waypoint) implements CustomPayload {
 
     private static final int MAX_NAME_LENGTH = 64;
 
@@ -24,9 +25,8 @@ public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypo
 
     public static final PacketCodec<PacketByteBuf, SaveWaypointPayload> CODEC =
             PacketCodec.tuple(
-                    PacketCodecs.VAR_INT,                    SaveWaypointPayload::mapId,
-                    PacketCodecs.string(MAX_NAME_LENGTH),    SaveWaypointPayload::previousName,
-                    PacketCodecs.codec(Waypoint.CODEC),      SaveWaypointPayload::waypoint,
+                    MapIdentity.PACKET_CODEC,           SaveWaypointPayload::mapId,
+                    PacketCodecs.codec(Waypoint.CODEC),  SaveWaypointPayload::waypoint,
                     SaveWaypointPayload::new
             );
 
@@ -48,22 +48,20 @@ public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypo
             return;
         }
 
-        int heldRootId = MapIdentity.rawIdOf(offHand);
-        var savedData  = ExplorerMapSavedData.get(player.getServer());
+        MapIdentity heldRoot = MapIdentity.ofStack(offHand, player.getServerWorld());
+        var savedData = ExplorerMapSavedData.get(player.getServer());
 
-        if (!savedData.isAccessibleFrom(heldRootId, payload.mapId())) {
+        if (heldRoot == null || !savedData.isAccessibleFrom(heldRoot, payload.mapId())) {
             ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] SaveWaypoint: rejected from {} - map #{} is not the held map or a known expansion of it",
-                    player.getName().getString(), payload.mapId());
+                    "[ExplorerMap] SaveWaypoint: rejected from {} - map {} is not the held map or a known expansion of it",
+                    player.getName().getString(), payload.mapId().asKey());
             return;
         }
 
-        var world    = player.getServerWorld();
-        var mapState = world.getMapState(new MapIdComponent(payload.mapId()));
-
+        var mapState = MapIdentity.resolveAndVerify(player.getServerWorld(), payload.mapId());
         if (mapState == null) {
-            ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: map #{} not found for {}",
-                    payload.mapId(), player.getName().getString());
+            ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: map {} not found for {}",
+                    payload.mapId().asKey(), player.getName().getString());
             return;
         }
 
@@ -97,33 +95,25 @@ public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypo
             return;
         }
 
+        UUID incomingId = payload.waypoint().id();
+        if (incomingId == null) {
+            ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: missing waypoint id rejected from {}",
+                    player.getName().getString());
+            return;
+        }
+
         var entry = savedData.getOrCreate(payload.mapId());
         String playerUuid = player.getUuid().toString();
-        Waypoint previous = entry.getWaypoints().stream()
-                .filter(wp -> wp.name().equals(payload.previousName()))
-                .findFirst()
-                .orElse(null);
+        Waypoint previous = entry.findWaypoint(incomingId);
 
-        if (!payload.previousName().isEmpty()
-                && (previous == null || !previous.isOwnedBy(player.getUuid()))) {
+        boolean editing = previous != null;
+        if (editing && !previous.isOwnedBy(player.getUuid())) {
             ExplorerMapMod.LOGGER.warn(
                     "[ExplorerMap] SaveWaypoint: {} tried to edit a waypoint they do not own",
                     player.getName().getString());
             return;
         }
 
-        Waypoint nameConflict = entry.getWaypoints().stream()
-                .filter(wp -> wp.name().equals(name))
-                .findFirst()
-                .orElse(null);
-        if (nameConflict != null && nameConflict != previous) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] SaveWaypoint: duplicate waypoint name '{}' rejected",
-                    name);
-            return;
-        }
-
-        boolean editing = previous != null;
         int waypointCapacity = entry.getWaypointCapacity();
         long ownedWaypointCount = entry.getWaypoints().stream()
                 .filter(wp -> wp.isOwnedBy(player.getUuid()))
@@ -136,24 +126,14 @@ public record SaveWaypointPayload(int mapId, String previousName, Waypoint waypo
             return;
         }
 
-        String ownerUuid = previous != null ? previous.ownerUuid() : playerUuid;
-        Waypoint sanitized = new Waypoint(
-                name,
-                wx,
-                wz,
-                iconId,
-                payload.waypoint().color(),
-                ownerUuid
-        );
+        UUID id = editing ? previous.id() : incomingId;
+        String ownerUuid = editing ? previous.ownerUuid() : playerUuid;
+        Waypoint sanitized = new Waypoint(id, name, wx, wz, iconId, payload.waypoint().color(), ownerUuid);
 
-        if (previous != null && !previous.name().equals(name)) {
-            savedData.removeWaypoint(payload.mapId(), payload.previousName());
-        }
-        savedData.removeWaypoint(payload.mapId(), name);
         savedData.addWaypoint(payload.mapId(), sanitized);
 
-        ExplorerMapMod.LOGGER.debug("[ExplorerMap] Saved waypoint '{}' on map #{}",
-                payload.waypoint().name(), payload.mapId());
+        ExplorerMapMod.LOGGER.debug("[ExplorerMap] Saved waypoint '{}' on map {}",
+                sanitized.name(), payload.mapId().asKey());
 
         SyncWaypointsPayload.broadcastTo(player.getServer(), payload.mapId());
     }

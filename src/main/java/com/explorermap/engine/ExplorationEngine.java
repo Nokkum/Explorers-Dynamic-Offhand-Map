@@ -40,14 +40,15 @@ public class ExplorationEngine {
         ItemStack offHand = player.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) return;
 
-        int mapId = MapIdentity.rawIdOf(offHand);
-        if (mapId < 0) return;
+        int rawMapId = MapIdentity.rawIdOf(offHand);
+        if (rawMapId < 0) return;
 
         MapState mapState = MapIdentity.stateOf(offHand, client.world);
         if (mapState == null) return;
 
         if (!DimensionMapTracker.isMapRelevantForCurrentDimension(player, mapState)) return;
 
+        MapIdentity mapId = MapIdentity.of(mapState, rawMapId);
         MapEntryData mapEntry = ClientMapCache.getOrCreate(mapId);
         TileGrid grid = TileGrid.build(mapId, mapState, mapEntry, client.world);
         MultiTileCanvas canvas = MultiTileCanvas.from(grid, mapState);

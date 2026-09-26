@@ -2,6 +2,8 @@ package com.explorermap.structure;
 
 import com.explorermap.ExplorerMapMod;
 import com.explorermap.data.ExplorerMapSavedData;
+import com.explorermap.data.MapEntryData;
+import com.explorermap.data.MapIdentity;
 import com.explorermap.network.SyncWaypointsPayload;
 import com.explorermap.waypoint.Waypoint;
 import net.minecraft.item.map.MapState;
@@ -17,6 +19,7 @@ import net.minecraft.world.gen.structure.Structure;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public final class StructureWaypointDetector {
 
@@ -26,7 +29,7 @@ public final class StructureWaypointDetector {
 
     public static void checkAndPlace(MinecraftServer server,
                                       ServerPlayerEntity player,
-                                      int mapId,
+                                      MapIdentity mapId,
                                       MapState mapState,
                                       ExplorerMapSavedData savedData) {
         ServerWorld world = server.getWorld(mapState.dimension);
@@ -37,10 +40,10 @@ public final class StructureWaypointDetector {
         int minX = mapState.centerX - halfBlocks;
         int minZ = mapState.centerZ - halfBlocks;
 
-        var entry = savedData.getOrCreate(mapId);
-        byte[] bitmask = entry.getDiscoveredPixelsCopy();
+        MapEntryData entry = savedData.getOrCreate(mapId);
+        byte[] bitmask = savedData.aggregateDiscoveredPixels(mapId);
 
-        Set<ChunkPos> discoveredChunks = new HashSet<>();
+        Set<ChunkPos> newlyRelevantChunks = new HashSet<>();
         for (int row = 0; row < 128; row++) {
             for (int col = 0; col < 128; col++) {
                 int bit = row * 128 + col;
@@ -48,16 +51,22 @@ public final class StructureWaypointDetector {
 
                 int wx = minX + col * scale + scale / 2;
                 int wz = minZ + row * scale + scale / 2;
-                discoveredChunks.add(new ChunkPos(new BlockPos(wx, 64, wz)));
+                ChunkPos chunkPos = new ChunkPos(new BlockPos(wx, 64, wz));
+                if (entry.markStructureChunkProcessed(chunkPos.toLong())) {
+                    newlyRelevantChunks.add(chunkPos);
+                }
             }
         }
 
-        if (discoveredChunks.isEmpty()) return;
+        if (newlyRelevantChunks.isEmpty()) return;
 
         boolean placedAny = false;
 
-        for (ChunkPos chunkPos : discoveredChunks) {
-            if (!world.isChunkLoaded(chunkPos.x, chunkPos.z)) continue;
+        for (ChunkPos chunkPos : newlyRelevantChunks) {
+            if (!world.isChunkLoaded(chunkPos.x, chunkPos.z)) {
+                entry.unmarkStructureChunkProcessed(chunkPos.toLong());
+                continue;
+            }
 
             var chunk = world.getChunk(chunkPos.x, chunkPos.z);
             Map<Structure, StructureStart> starts = chunk.getStructureStarts();
@@ -67,23 +76,26 @@ public final class StructureWaypointDetector {
                 StructureStart start = se.getValue();
                 if (!start.hasChildren()) continue;
 
+                if (!structureOverlapsDiscovered(start, bitmask, minX, minZ, scale)) continue;
+
                 var bb = start.getBoundingBox();
                 double structX = (bb.getMinX() + bb.getMaxX()) / 2.0;
                 double structZ = (bb.getMinZ() + bb.getMaxZ()) / 2.0;
 
-                if (hasDuplicateWaypoint(savedData.getOrCreate(mapId), structX, structZ)) continue;
+                if (hasDuplicateWaypoint(entry, structX, structZ)) continue;
 
-                String iconId = iconForStructure(world, se.getKey());
-                String name   = nameForStructure(world, se.getKey());
-                int color     = colorForStructure(world, se.getKey());
+                String iconId   = iconForStructure(world, se.getKey());
+                String baseName = nameForStructure(world, se.getKey());
+                String name     = uniqueDisplayName(entry, baseName);
+                int color       = colorForStructure(world, se.getKey());
 
-                Waypoint wp = new Waypoint(name, structX, structZ, iconId, color);
+                Waypoint wp = Waypoint.create(name, structX, structZ, iconId, color, "");
                 savedData.addWaypoint(mapId, wp);
                 placedAny = true;
 
                 ExplorerMapMod.LOGGER.info(
-                        "[ExplorerMap] Auto-waypoint: {} at ({}, {}) on map #{}",
-                        name, (int) structX, (int) structZ, mapId);
+                        "[ExplorerMap] Auto-waypoint: {} at ({}, {}) on map {}",
+                        name, (int) structX, (int) structZ, mapId.asKey());
             }
         }
 
@@ -92,14 +104,51 @@ public final class StructureWaypointDetector {
         }
     }
 
-    private static boolean hasDuplicateWaypoint(com.explorermap.data.MapEntryData entry,
-                                                 double wx, double wz) {
+    private static boolean structureOverlapsDiscovered(StructureStart start, byte[] bitmask,
+                                                         int minX, int minZ, int scale) {
+        var bb = start.getBoundingBox();
+        int colMin = Math.floorDiv(bb.getMinX() - minX, scale);
+        int colMax = Math.floorDiv(bb.getMaxX() - minX, scale);
+        int rowMin = Math.floorDiv(bb.getMinZ() - minZ, scale);
+        int rowMax = Math.floorDiv(bb.getMaxZ() - minZ, scale);
+
+        colMin = Math.max(0, colMin);
+        colMax = Math.min(127, colMax);
+        rowMin = Math.max(0, rowMin);
+        rowMax = Math.min(127, rowMax);
+        if (colMin > colMax || rowMin > rowMax) return false; // structure is entirely outside this map tile
+
+        for (int row = rowMin; row <= rowMax; row++) {
+            int base = row * 128;
+            for (int col = colMin; col <= colMax; col++) {
+                int bit = base + col;
+                if ((bitmask[bit >> 3] & (1 << (bit & 7))) != 0) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasDuplicateWaypoint(MapEntryData entry, double wx, double wz) {
         for (Waypoint existing : entry.getWaypoints()) {
             double dx = existing.worldX() - wx;
             double dz = existing.worldZ() - wz;
             if (Math.sqrt(dx * dx + dz * dz) < DEDUP_RADIUS) return true;
         }
         return false;
+    }
+
+    private static String uniqueDisplayName(MapEntryData entry, String baseName) {
+        Set<String> existingNames = entry.getWaypoints().stream()
+                .map(Waypoint::name)
+                .collect(Collectors.toSet());
+        if (!existingNames.contains(baseName)) return baseName;
+        int suffix = 2;
+        String candidate;
+        do {
+            candidate = baseName + " (" + suffix + ")";
+            suffix++;
+        } while (existingNames.contains(candidate));
+        return candidate;
     }
 
     private static String iconForStructure(ServerWorld world, Structure structure) {

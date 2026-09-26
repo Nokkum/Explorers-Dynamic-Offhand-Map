@@ -2,6 +2,8 @@ package com.explorermap.expansion;
 
 import com.explorermap.data.ClientMapCache;
 import com.explorermap.data.MapEntryData;
+import com.explorermap.data.MapIdentity;
+import com.explorermap.ExplorerMapMod;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.component.type.MapIdComponent;
 import net.minecraft.item.map.MapState;
@@ -12,7 +14,7 @@ import java.util.List;
 public final class TileGrid {
 
     public record TileEntry(
-            int mapId,
+            MapIdentity mapId,
             MapState state,
             MapEntryData entry,
             int gridX,
@@ -58,7 +60,7 @@ public final class TileGrid {
         return null;
     }
 
-    public static TileGrid build(int rootMapId, MapState rootState, MapEntryData rootEntry, ClientWorld world) {
+    public static TileGrid build(MapIdentity rootMapId, MapState rootState, MapEntryData rootEntry, ClientWorld world) {
         TileGrid grid = new TileGrid();
         grid.tiles.add(new TileEntry(rootMapId, rootState, rootEntry, 0, 0));
 
@@ -73,11 +75,19 @@ public final class TileGrid {
                 case EAST  -> gx =  1;
             }
 
-            MapState adjState = world.getMapState(new MapIdComponent(exp.mapId()));
+            MapIdentity target = exp.target();
+            if (!target.dimension().equals(world.getRegistryKey())) {
+                ExplorerMapMod.LOGGER.warn(
+                        "[ExplorerMap] Skipping expansion to {} - it isn't in the current dimension {}",
+                        target.asKey(), world.getRegistryKey().getValue());
+                continue;
+            }
+
+            MapState adjState = world.getMapState(new MapIdComponent(target.mapId()));
             if (adjState == null) continue;
 
-            MapEntryData adjEntry = ClientMapCache.getOrCreate(exp.mapId());
-            grid.tiles.add(new TileEntry(exp.mapId(), adjState, adjEntry, gx, gz));
+            MapEntryData adjEntry = ClientMapCache.getOrCreate(target);
+            grid.tiles.add(new TileEntry(target, adjState, adjEntry, gx, gz));
         }
 
         return grid;

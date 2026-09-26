@@ -13,7 +13,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
 
-public record ShareDiscoveryPayload(int mapId, String targetName) implements CustomPayload {
+public record ShareDiscoveryPayload(MapIdentity mapId, String targetName) implements CustomPayload {
 
     private static final int MAX_NAME_LENGTH = 64;
 
@@ -22,7 +22,7 @@ public record ShareDiscoveryPayload(int mapId, String targetName) implements Cus
 
     public static final PacketCodec<PacketByteBuf, ShareDiscoveryPayload> CODEC =
             PacketCodec.tuple(
-                    PacketCodecs.VAR_INT, ShareDiscoveryPayload::mapId,
+                    MapIdentity.PACKET_CODEC, ShareDiscoveryPayload::mapId,
                     PacketCodecs.string(MAX_NAME_LENGTH), ShareDiscoveryPayload::targetName,
                     ShareDiscoveryPayload::new
             );
@@ -41,7 +41,8 @@ public record ShareDiscoveryPayload(int mapId, String targetName) implements Cus
     private static void handleOnServer(ServerPlayerEntity sender, ShareDiscoveryPayload payload) {
         var offHand = sender.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)
-                || MapIdentity.rawIdOf(offHand) != payload.mapId()) return;
+                || MapIdentity.resolveAndVerify(sender.getServerWorld(), payload.mapId()) == null
+                || MapIdentity.rawIdOf(offHand) != payload.mapId().mapId()) return;
 
         ServerPlayerEntity target =
                 sender.getServer().getPlayerManager().getPlayer(payload.targetName().trim());

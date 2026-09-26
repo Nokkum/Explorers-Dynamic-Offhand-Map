@@ -13,8 +13,11 @@ import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
+import net.minecraft.util.Uuids;
 
-public record WaypointSharePayload(int mapId, String waypointName, String targetName)
+import java.util.UUID;
+
+public record WaypointSharePayload(MapIdentity mapId, UUID waypointId, String targetName)
         implements CustomPayload {
 
     private static final int MAX_NAME_LENGTH = 64;
@@ -24,8 +27,8 @@ public record WaypointSharePayload(int mapId, String waypointName, String target
 
     public static final PacketCodec<PacketByteBuf, WaypointSharePayload> CODEC =
             PacketCodec.tuple(
-                    PacketCodecs.VAR_INT, WaypointSharePayload::mapId,
-                    PacketCodecs.string(MAX_NAME_LENGTH), WaypointSharePayload::waypointName,
+                    MapIdentity.PACKET_CODEC, WaypointSharePayload::mapId,
+                    Uuids.PACKET_CODEC, WaypointSharePayload::waypointId,
                     PacketCodecs.string(MAX_NAME_LENGTH), WaypointSharePayload::targetName,
                     WaypointSharePayload::new
             );
@@ -45,17 +48,14 @@ public record WaypointSharePayload(int mapId, String waypointName, String target
         var offHand = sender.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) return;
 
-        int heldRootId = MapIdentity.rawIdOf(offHand);
+        MapIdentity heldRoot = MapIdentity.ofStack(offHand, sender.getServerWorld());
         var savedData = ExplorerMapSavedData.get(sender.getServer());
-        if (!savedData.isAccessibleFrom(heldRootId, payload.mapId())) return;
+        if (heldRoot == null || !savedData.isAccessibleFrom(heldRoot, payload.mapId())) return;
 
         var entry = savedData.get(payload.mapId());
         if (entry == null) return;
 
-        Waypoint waypoint = entry.getWaypoints().stream()
-                .filter(wp -> wp.name().equals(payload.waypointName()))
-                .findFirst()
-                .orElse(null);
+        Waypoint waypoint = entry.findWaypoint(payload.waypointId());
         if (waypoint == null || !waypoint.isOwnedBy(sender.getUuid())) {
             ExplorerMapMod.LOGGER.warn(
                     "[ExplorerMap] ShareWaypoint: {} tried to share a waypoint they do not own",
@@ -73,7 +73,7 @@ public record WaypointSharePayload(int mapId, String waypointName, String target
             return;
         }
 
-        if (!savedData.grantWaypointShare(payload.mapId(), waypoint.name(), target.getUuid())) {
+        if (!savedData.grantWaypointShare(payload.mapId(), payload.waypointId(), target.getUuid())) {
             return;
         }
 

@@ -1,6 +1,7 @@
 package com.explorermap.hud;
 
 import com.explorermap.data.MapEntryData;
+import com.explorermap.data.MapIdentity;
 import com.explorermap.api.ExplorerMapApi;
 import com.explorermap.config.ExplorerMapConfig;
 import net.fabricmc.api.EnvType;
@@ -11,6 +12,8 @@ import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.item.map.MapState;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.Heightmap;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -23,12 +26,12 @@ public final class TileTextureCache {
     private static final TileTextureCache INSTANCE = new TileTextureCache();
     public static TileTextureCache getInstance() { return INSTANCE; }
 
-    private final Map<Integer, Entry> entries = new HashMap<>();
+    private final Map<MapIdentity, Entry> entries = new HashMap<>();
     private int nextSlot = 0;
 
     private TileTextureCache() {}
 
-    public Identifier getOrUpdate(int mapId, MapState mapState, MapEntryData mapEntry) {
+    public Identifier getOrUpdate(MapIdentity mapId, MapState mapState, MapEntryData mapEntry) {
         Entry entry = entries.get(mapId);
         long gen = mapEntry.getVisualGeneration();
         boolean highlightRecent = ExplorerMapConfig.get().highlightRecentDiscoveries;
@@ -70,6 +73,7 @@ public final class TileTextureCache {
         int scale = 1 << mapState.scale;
         int minX = mapState.centerX - 64 * scale;
         int minZ = mapState.centerZ - 64 * scale;
+        boolean sameDimension = world != null && world.getRegistryKey().equals(mapState.dimension);
 
         var tm = MinecraftClient.getInstance().getTextureManager();
 
@@ -97,10 +101,11 @@ public final class TileTextureCache {
                 if (discovered) {
                     int vanilla = MapColor.getRenderColor(colors[row * 128 + col] & 0xFF);
                     int argb = vanilla;
-                    if (world != null && world.getRegistryKey().equals(mapState.dimension)) {
-                        var sample = new net.minecraft.util.math.BlockPos(
-                                minX + col * scale + scale / 2, 64,
-                                minZ + row * scale + scale / 2);
+                    if (sameDimension) {
+                        int sampleX = minX + col * scale + scale / 2;
+                        int sampleZ = minZ + row * scale + scale / 2;
+                        int sampleY = surfaceY(world, sampleX, sampleZ);
+                        var sample = new BlockPos(sampleX, sampleY, sampleZ);
                         argb = ExplorerMapApi.colorFor(world, sample, vanilla);
                     }
                     argb |= 0xFF000000;
@@ -120,6 +125,16 @@ public final class TileTextureCache {
             entry.identifier = tm.registerDynamicTexture("explorermap/tile/" + entry.slot, entry.texture);
         } else {
             entry.texture.upload();
+        }
+    }
+
+    private static int surfaceY(net.minecraft.world.World world, int x, int z) {
+        if (world == null) return 64;
+        try {
+            int topY = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z);
+            return Math.max(world.getBottomY(), topY - 1);
+        } catch (Exception e) {
+            return 64;
         }
     }
 

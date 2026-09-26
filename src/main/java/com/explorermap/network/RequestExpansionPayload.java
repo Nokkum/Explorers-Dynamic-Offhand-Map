@@ -16,6 +16,7 @@ import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Hand;
 
 public record RequestExpansionPayload(
@@ -52,15 +53,28 @@ public record RequestExpansionPayload(
             return;
         }
 
-        var world    = player.getServerWorld();
-        var mapState = MapIdentity.stateOf(offHand, world);
+        var mapState = MapIdentity.stateOf(offHand, player.getServerWorld());
         if (mapState == null) {
             ExpansionFailedPayload.sendTo(player, payload.direction(),
                     ExpansionFailedPayload.Reason.NO_MAP_IN_OFFHAND);
             return;
         }
 
-        int mapId = MapIdentity.rawIdOf(offHand);
+        ServerWorld mapWorld = player.getServer().getWorld(mapState.dimension);
+        if (mapWorld == null) {
+            ExpansionFailedPayload.sendTo(player, payload.direction(),
+                    ExpansionFailedPayload.Reason.NO_MAP_IN_OFFHAND);
+            return;
+        }
+
+        int rawMapId = MapIdentity.rawIdOf(offHand);
+        if (rawMapId < 0) {
+            ExpansionFailedPayload.sendTo(player, payload.direction(),
+                    ExpansionFailedPayload.Reason.NO_MAP_IN_OFFHAND);
+            return;
+        }
+        MapIdentity mapId = MapIdentity.of(mapState, rawMapId);
+
         var savedData = ExplorerMapSavedData.get(player.getServer());
 
         if (savedData.getOrCreate(mapId).hasExpansion(payload.direction())) {
@@ -85,8 +99,8 @@ public record RequestExpansionPayload(
             case EAST  -> adjX += tileWidth;
         }
 
-        int newMapId = MapStateLocator.findOrCreate(world, savedData, adjX, adjZ, (byte) mapState.scale);
-        if (newMapId < 0) {
+        MapIdentity newMapId = MapStateLocator.findOrCreate(mapWorld, savedData, adjX, adjZ, (byte) mapState.scale);
+        if (newMapId == null) {
             ExpansionFailedPayload.sendTo(player, payload.direction(),
                     ExpansionFailedPayload.Reason.NO_MAP_IN_OFFHAND);
             return;
