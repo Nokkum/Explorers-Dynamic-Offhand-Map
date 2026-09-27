@@ -58,7 +58,7 @@ public record SaveWaypointPayload(MapIdentity mapId, Waypoint waypoint) implemen
             return;
         }
 
-        var mapState = MapIdentity.resolveAndVerify(player.getServerWorld(), payload.mapId());
+        var mapState = MapIdentity.resolveAndVerify(player.getServer(), payload.mapId());
         if (mapState == null) {
             ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: map {} not found for {}",
                     payload.mapId().asKey(), player.getName().getString());

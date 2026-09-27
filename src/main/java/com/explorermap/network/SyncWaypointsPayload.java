@@ -60,7 +60,7 @@ public record SyncWaypointsPayload(
         for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
             var offHand = p.getStackInHand(Hand.OFF_HAND);
             if (!ExplorerMapMod.isFilledMap(offHand)) continue;
-            if (MapIdentity.rawIdOf(offHand) == mapId.mapId()) {
+            if (mapId.equals(MapIdentity.ofStack(offHand, p.getServerWorld()))) {
                 sendTo(p, mapId);
             }
         }

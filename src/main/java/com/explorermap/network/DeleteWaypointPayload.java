@@ -56,7 +56,7 @@ public record DeleteWaypointPayload(MapIdentity mapId, UUID waypointId) implemen
             return;
         }
 
-        var mapState = MapIdentity.resolveAndVerify(player.getServerWorld(), payload.mapId());
+        var mapState = MapIdentity.resolveAndVerify(player.getServer(), payload.mapId());
         if (mapState == null) return;
 
         if (!savedData.canManageWaypoint(payload.mapId(), payload.waypointId(), player.getUuid())) {

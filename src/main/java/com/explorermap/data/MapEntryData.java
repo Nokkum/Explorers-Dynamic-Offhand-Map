@@ -1,13 +1,17 @@
 package com.explorermap.data;
 
+import com.explorermap.ExplorerMapMod;
 import com.explorermap.expansion.ExpansionRecord;
+import com.explorermap.registry.ExplorerMapRegistry;
 import com.explorermap.waypoint.Waypoint;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -26,7 +30,7 @@ public final class MapEntryData {
     private transient byte[] recentPixels;
     private transient boolean hasFadingPixels = false;
 
-    private transient final Set<Long> processedStructureChunks = new HashSet<>();
+    private transient final Map<Long, Integer> structureChunkScanCoverage = new HashMap<>();
 
     private final List<ExpansionRecord> expansions;
     private final List<Waypoint> waypoints;
@@ -179,6 +183,17 @@ public final class MapEntryData {
     }
 
     public void addExpansion(ExpansionRecord record) {
+        if (record == null || record.target() == null) {
+            ExplorerMapMod.LOGGER.warn("[ExplorerMap] Ignoring an expansion record with no target identity");
+            return;
+        }
+        expansions.removeIf(existing -> existing.direction() == record.direction());
+        if (expansions.size() >= ExpansionRecord.Direction.values().length) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] Refusing to add more than {} expansions to a single map",
+                    ExpansionRecord.Direction.values().length);
+            return;
+        }
         expansions.add(record);
     }
 
@@ -237,12 +252,13 @@ public final class MapEntryData {
         return true;
     }
 
-    public boolean markStructureChunkProcessed(long chunkPosLong) {
-        return processedStructureChunks.add(chunkPosLong);
+    public boolean structureChunkNeedsScan(long chunkPosLong, int currentDiscoveredPixelCount) {
+        Integer previous = structureChunkScanCoverage.get(chunkPosLong);
+        return previous == null || currentDiscoveredPixelCount > previous;
     }
 
-    public void unmarkStructureChunkProcessed(long chunkPosLong) {
-        processedStructureChunks.remove(chunkPosLong);
+    public void markStructureChunkScanned(long chunkPosLong, int discoveredPixelCount) {
+        structureChunkScanCoverage.put(chunkPosLong, discoveredPixelCount);
     }
 
     private static final Codec<byte[]> BITMASK_CODEC = Codec.LONG.listOf().xmap(
@@ -270,6 +286,7 @@ public final class MapEntryData {
         if (wp == null || wp.id() == null) return false;
         if (wp.name() == null || wp.name().isBlank() || wp.name().length() > MAX_WAYPOINT_NAME_LENGTH) return false;
         if (wp.iconId() == null || wp.iconId().isBlank() || wp.iconId().length() > MAX_ICON_ID_LENGTH) return false;
+        if (!ExplorerMapRegistry.isRegisteredIcon(wp.iconId())) return false;
         if (!Double.isFinite(wp.worldX()) || !Double.isFinite(wp.worldZ())) return false;
         return true;
     }
@@ -277,18 +294,24 @@ public final class MapEntryData {
     public static final Codec<MapEntryData> CODEC = RecordCodecBuilder.create(instance ->
             instance.group(
                     BITMASK_CODEC.fieldOf("discovered_pixels").forGetter(d -> d.discoveredPixels),
-                    ExpansionRecord.CODEC.listOf().fieldOf("expansions").forGetter(d -> d.expansions),
-                    Waypoint.CODEC.listOf().fieldOf("waypoints").forGetter(d -> d.waypoints),
+                    CodecUtil.boundedList(ExpansionRecord.CODEC, MAX_EXPANSIONS_ON_LOAD, "expansions")
+                            .fieldOf("expansions").forGetter(d -> d.expansions),
+                    CodecUtil.boundedList(Waypoint.CODEC, MAX_WAYPOINTS_ON_LOAD, "waypoints")
+                            .fieldOf("waypoints").forGetter(d -> d.waypoints),
                     Codec.INT.optionalFieldOf("waypoint_capacity", 0).forGetter(d -> d.waypointCapacity),
                     Codec.INT.optionalFieldOf("waypoint_share_charges", 0).forGetter(d -> d.waypointShareCharges)
             ).apply(instance, (pixels, expansions, waypoints, capacity, shareCharges) -> {
-                List<ExpansionRecord> safeExpansions = expansions.size() > MAX_EXPANSIONS_ON_LOAD
-                        ? expansions.subList(0, MAX_EXPANSIONS_ON_LOAD) : expansions;
+                List<ExpansionRecord> safeExpansions = new ArrayList<>(expansions.size());
+                Set<ExpansionRecord.Direction> seenDirections = new HashSet<>();
+                for (ExpansionRecord record : expansions) {
+                    if (record == null || record.target() == null) continue;
+                    if (!seenDirections.add(record.direction())) continue;
+                    safeExpansions.add(record);
+                }
 
-                List<Waypoint> safeWaypoints = new ArrayList<>(Math.min(waypoints.size(), MAX_WAYPOINTS_ON_LOAD));
+                List<Waypoint> safeWaypoints = new ArrayList<>(waypoints.size());
                 Set<UUID> seenIds = new HashSet<>();
                 for (Waypoint wp : waypoints) {
-                    if (safeWaypoints.size() >= MAX_WAYPOINTS_ON_LOAD) break;
                     if (!isValidOnLoad(wp)) continue;
                     if (!seenIds.add(wp.id())) continue; // duplicate id on disk - keep the first occurrence
                     safeWaypoints.add(wp);

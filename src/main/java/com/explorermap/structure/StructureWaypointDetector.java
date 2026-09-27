@@ -16,6 +16,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.gen.structure.Structure;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -43,7 +44,7 @@ public final class StructureWaypointDetector {
         MapEntryData entry = savedData.getOrCreate(mapId);
         byte[] bitmask = savedData.aggregateDiscoveredPixels(mapId);
 
-        Set<ChunkPos> newlyRelevantChunks = new HashSet<>();
+        Map<Long, Integer> currentCoverage = new HashMap<>();
         for (int row = 0; row < 128; row++) {
             for (int col = 0; col < 128; col++) {
                 int bit = row * 128 + col;
@@ -51,24 +52,31 @@ public final class StructureWaypointDetector {
 
                 int wx = minX + col * scale + scale / 2;
                 int wz = minZ + row * scale + scale / 2;
-                ChunkPos chunkPos = new ChunkPos(new BlockPos(wx, 64, wz));
-                if (entry.markStructureChunkProcessed(chunkPos.toLong())) {
-                    newlyRelevantChunks.add(chunkPos);
-                }
+                long chunkKey = new ChunkPos(new BlockPos(wx, 64, wz)).toLong();
+                currentCoverage.merge(chunkKey, 1, Integer::sum);
             }
         }
 
-        if (newlyRelevantChunks.isEmpty()) return;
+        Set<Long> chunksToScan = new HashSet<>();
+        for (Map.Entry<Long, Integer> coverage : currentCoverage.entrySet()) {
+            if (entry.structureChunkNeedsScan(coverage.getKey(), coverage.getValue())) {
+                chunksToScan.add(coverage.getKey());
+            }
+        }
+
+        if (chunksToScan.isEmpty()) return;
 
         boolean placedAny = false;
 
-        for (ChunkPos chunkPos : newlyRelevantChunks) {
+        for (long chunkKey : chunksToScan) {
+            ChunkPos chunkPos = new ChunkPos(chunkKey);
             if (!world.isChunkLoaded(chunkPos.x, chunkPos.z)) {
-                entry.unmarkStructureChunkProcessed(chunkPos.toLong());
                 continue;
             }
 
             var chunk = world.getChunk(chunkPos.x, chunkPos.z);
+            entry.markStructureChunkScanned(chunkKey, currentCoverage.get(chunkKey));
+
             Map<Structure, StructureStart> starts = chunk.getStructureStarts();
             if (starts.isEmpty()) continue;
 

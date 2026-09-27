@@ -12,6 +12,8 @@ import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
 import net.minecraft.world.World;
 
@@ -56,9 +58,11 @@ public record MapIdentity(RegistryKey<World> dimension, int mapId) {
         return world.getMapState(new MapIdComponent(rawId));
     }
 
-    public static MapState resolveAndVerify(World anyWorld, MapIdentity claimed) {
+    public static MapState resolveAndVerify(MinecraftServer server, MapIdentity claimed) {
         if (claimed == null) return null;
-        MapState state = stateOf(claimed.mapId(), anyWorld);
+        ServerWorld world = server.getWorld(claimed.dimension());
+        if (world == null) return null;
+        MapState state = stateOf(claimed.mapId(), world);
         if (state == null) return null;
         if (!state.dimension.equals(claimed.dimension())) return null;
         return state;
@@ -81,7 +85,7 @@ public record MapIdentity(RegistryKey<World> dimension, int mapId) {
     public static final Codec<MapIdentity> CODEC = RecordCodecBuilder.create(instance ->
             instance.group(
                     DIMENSION_CODEC.fieldOf("dimension").forGetter(MapIdentity::dimension),
-                    Codec.INT.fieldOf("map_id").forGetter(MapIdentity::mapId)
+                    Codec.intRange(0, Integer.MAX_VALUE).fieldOf("map_id").forGetter(MapIdentity::mapId)
             ).apply(instance, MapIdentity::new)
     );
 

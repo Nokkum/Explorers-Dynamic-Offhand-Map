@@ -48,7 +48,7 @@ public final class SyncDiscoveryPayload {
             var offHand = sender.getStackInHand(Hand.OFF_HAND);
             if (!ExplorerMapMod.isFilledMap(offHand)) return;
 
-            var mapState = MapIdentity.resolveAndVerify(sender.getServerWorld(), payload.mapId());
+            var mapState = MapIdentity.resolveAndVerify(server, payload.mapId());
             if (mapState == null) {
                 ExplorerMapMod.LOGGER.warn(
                         "[ExplorerMap] Rejected discovery upload for map {} from {} - map does not exist "
@@ -57,7 +57,8 @@ public final class SyncDiscoveryPayload {
                 return;
             }
 
-            if (MapIdentity.rawIdOf(offHand) != payload.mapId().mapId()) {
+            MapIdentity heldId = MapIdentity.ofStack(offHand, sender.getServerWorld());
+            if (!payload.mapId().equals(heldId)) {
                 ExplorerMapMod.LOGGER.warn(
                         "[ExplorerMap] Rejected discovery upload for map {} from {} - not holding that map",
                         payload.mapId().asKey(), sender.getName().getString());

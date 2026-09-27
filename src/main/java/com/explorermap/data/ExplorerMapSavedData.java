@@ -111,7 +111,6 @@ public class ExplorerMapSavedData extends PersistentState {
             current[i] |= bitmask[i];
             changed |= before != current[i];
         }
-
         boolean legacyChanged = getOrCreate(mapId).mergeBitmask(bitmask);
         if (changed || legacyChanged) markDirty();
         return changed;
@@ -312,12 +311,14 @@ public class ExplorerMapSavedData extends PersistentState {
 
     private static final Codec<SaveShape> SHAPE_CODEC = RecordCodecBuilder.create(instance ->
             instance.group(
-                    EntryRow.CODEC.listOf().fieldOf("entries").forGetter(SaveShape::entries),
-                    TileRow.CODEC.listOf().fieldOf("tiles").forGetter(SaveShape::tiles),
-                    ShareRow.CODEC.listOf()
+                    CodecUtil.boundedList(EntryRow.CODEC, MAX_ENTRY_ROWS, "entries")
+                            .fieldOf("entries").forGetter(SaveShape::entries),
+                    CodecUtil.boundedList(TileRow.CODEC, MAX_TILE_ROWS, "tiles")
+                            .fieldOf("tiles").forGetter(SaveShape::tiles),
+                    CodecUtil.boundedList(ShareRow.CODEC, MAX_SHARE_ROWS, "waypoint_shares")
                             .optionalFieldOf("waypoint_shares", List.of())
                             .forGetter(SaveShape::shares),
-                    DiscoveryRow.CODEC.listOf()
+                    CodecUtil.boundedList(DiscoveryRow.CODEC, MAX_DISCOVERY_ROWS, "player_discoveries")
                             .optionalFieldOf("player_discoveries", List.of())
                             .forGetter(SaveShape::discoveries)
             ).apply(instance, SaveShape::new)
@@ -335,17 +336,17 @@ public class ExplorerMapSavedData extends PersistentState {
     public static final Codec<ExplorerMapSavedData> CODEC = SHAPE_CODEC.xmap(
             shape -> {
                 Map<MapIdentity, MapEntryData> entryMap = new HashMap<>();
-                for (EntryRow row : cap(shape.entries(), MAX_ENTRY_ROWS, "entries")) {
+                for (EntryRow row : shape.entries()) {
                     entryMap.put(row.key(), row.value());
                 }
 
                 Map<TileKey, MapIdentity> tileMap = new HashMap<>();
-                for (TileRow row : cap(shape.tiles(), MAX_TILE_ROWS, "tiles")) {
+                for (TileRow row : shape.tiles()) {
                     tileMap.put(row.key(), row.mapId());
                 }
 
                 Map<MapIdentity, Map<String, Set<UUID>>> shareMap = new HashMap<>();
-                for (ShareRow row : cap(shape.shares(), MAX_SHARE_ROWS, "waypoint_shares")) {
+                for (ShareRow row : shape.shares()) {
                     UUID waypointId = parseUuidOrNull(row.waypointId());
                     UUID recipient = parseUuidOrNull(row.recipientUuid());
                     if (waypointId == null || recipient == null) continue;
@@ -356,7 +357,7 @@ public class ExplorerMapSavedData extends PersistentState {
                 }
 
                 Map<MapIdentity, Map<String, byte[]>> discoveryMap = new HashMap<>();
-                for (DiscoveryRow row : cap(shape.discoveries(), MAX_DISCOVERY_ROWS, "player_discoveries")) {
+                for (DiscoveryRow row : shape.discoveries()) {
                     if (parseUuidOrNull(row.playerUuid()) == null) continue;
                     discoveryMap.computeIfAbsent(row.mapId(), ignored -> new HashMap<>())
                             .put(row.playerUuid(), row.bitmask().clone());
@@ -381,15 +382,6 @@ public class ExplorerMapSavedData extends PersistentState {
                 return new SaveShape(entryRows, tileRows, shareRows, discoveryRows);
             }
     );
-
-    private static <T> List<T> cap(List<T> list, int max, String label) {
-        if (list.size() <= max) return list;
-        ExplorerMapMod.LOGGER.warn(
-                "[ExplorerMap] Saved data has {} '{}' rows, more than the expected maximum of {} - "
-                        + "truncating. The save may be corrupted or was edited by hand.",
-                list.size(), label, max);
-        return list.subList(0, max);
-    }
 
     public static final PersistentState.Type<ExplorerMapSavedData> TYPE = new PersistentState.Type<>(
             ExplorerMapSavedData::new,

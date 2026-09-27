@@ -41,8 +41,8 @@ public record ShareDiscoveryPayload(MapIdentity mapId, String targetName) implem
     private static void handleOnServer(ServerPlayerEntity sender, ShareDiscoveryPayload payload) {
         var offHand = sender.getStackInHand(Hand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)
-                || MapIdentity.resolveAndVerify(sender.getServerWorld(), payload.mapId()) == null
-                || MapIdentity.rawIdOf(offHand) != payload.mapId().mapId()) return;
+                || MapIdentity.resolveAndVerify(sender.getServer(), payload.mapId()) == null
+                || !payload.mapId().equals(MapIdentity.ofStack(offHand, sender.getServerWorld()))) return;
 
         ServerPlayerEntity target =
                 sender.getServer().getPlayerManager().getPlayer(payload.targetName().trim());
