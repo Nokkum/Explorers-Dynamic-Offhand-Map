@@ -1,6 +1,6 @@
-<h1 align="center">Design</h1>
+<h1 align="center">Design Plans</h1>
 
-## Already Implemented:
+## Have Been Implemented:
 - Holding a filled map in your off-hand triggers a hands-free mini-map HUD in a corner.
 - Updates dynamically as you explore, only revealing areas you’ve actually seen.
 - Supports vanilla and modded worlds, including biomes, structures, and dimensions.
@@ -18,7 +18,7 @@
 - Faded edges show map coverage limits
 - Arrows show which directions can be expanded (in a Cartography table UI)
 - After expansion, players can place waypoints using banners or with the compass item.
-- Waypoints only appear for discovered areas.
+- Waypoints only appear for discovered areas. (if placed)
 - Optional icons for biome-specific discoveries (like modded biomes).
 - Small overlay in configurable corner.
 - Shows discovered pixels only, gradually filling as exploration happens.
@@ -37,7 +37,7 @@
 - Locked maps in item frames – A map placed in an item frame can't be expanded while it's there; you'd have to remove it and hold it in your offhand to expand it.
 - Map UI via right-click – Once placed, right-clicking the map opens a UI where you can reposition the map to any discovered area, displaying structures, waypoints, etc.
 - Directional map expansion via cartography table – Instead of vanilla expansion, the cartography table UI lets you choose which of the four directions to expand, along with the required resources (ink, paper).
-- Waypoints via cartography table – Placing waypoints becomes an option in the cartography table and requires a compass.
+- Waypoints via cartography table – Placing waypoints becomes an option by going to the cartography table and requires a compass.
 - Limited waypoints per compass – Each compass allows a max of 5 waypoints; to add more, you must return to the cartography table to insert another compass or erase an existing waypoint.
 - Remove banner name from vanilla map UI (keep it clean—names only, no icons/emblems, like real maps).
 - Click a region → coordinate popup shows for ~5–10 seconds.
