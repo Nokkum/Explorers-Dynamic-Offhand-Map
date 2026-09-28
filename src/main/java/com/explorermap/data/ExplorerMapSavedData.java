@@ -95,8 +95,11 @@ public class ExplorerMapSavedData extends PersistentState {
         return result;
     }
 
-    public boolean mergePlayerBitmask(MapIdentity mapId, UUID playerId, byte[] bitmask) {
-        if (playerId == null || bitmask == null) return false;
+    public Set<Integer> mergePlayerBitmask(MapIdentity mapId, UUID playerId, byte[] bitmask) {
+        if (playerId == null || bitmask == null) return Set.of();
+
+        byte[] aggregateBefore = aggregateDiscoveredPixels(mapId);
+
         Map<String, byte[]> players =
                 playerDiscoveries.computeIfAbsent(mapId, ignored -> new HashMap<>());
         boolean hasExistingPlayers = !players.isEmpty();
@@ -113,16 +116,35 @@ public class ExplorerMapSavedData extends PersistentState {
         }
         boolean legacyChanged = getOrCreate(mapId).mergeBitmask(bitmask);
         if (changed || legacyChanged) markDirty();
-        return changed;
+
+        if (!changed) return Set.of();
+
+        byte[] aggregateAfter = aggregateDiscoveredPixels(mapId);
+        Set<Integer> newlyDiscovered = new HashSet<>();
+        for (int i = 0; i < MapEntryData.BYTE_COUNT; i++) {
+            byte delta = (byte) (aggregateAfter[i] & ~aggregateBefore[i]);
+            if (delta == 0) continue;
+            for (int bit = 0; bit < 8; bit++) {
+                if ((delta & (1 << bit)) != 0) newlyDiscovered.add(i * 8 + bit);
+            }
+        }
+        return newlyDiscovered;
     }
 
     public boolean sharePlayerDiscovery(MapIdentity mapId, UUID from, UUID recipient) {
         if (from == null || recipient == null) return false;
         byte[] source = getPlayerDiscovery(mapId, from);
-        return mergePlayerBitmask(mapId, recipient, source);
+        return !mergePlayerBitmask(mapId, recipient, source).isEmpty();
     }
 
     public void addExpansion(MapIdentity mapId, ExpansionRecord record) {
+        if (record != null && record.target() != null
+                && !record.target().dimension().equals(mapId.dimension())) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] Refusing a cross-dimension expansion: {} -> {}",
+                    mapId.asKey(), record.target().asKey());
+            return;
+        }
         getOrCreate(mapId).addExpansion(record);
         markDirty();
     }

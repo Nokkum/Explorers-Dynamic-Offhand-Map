@@ -8,10 +8,8 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -29,8 +27,6 @@ public final class MapEntryData {
     private final byte[] discoveredPixels;
     private transient byte[] recentPixels;
     private transient boolean hasFadingPixels = false;
-
-    private transient final Map<Long, Integer> structureChunkScanCoverage = new HashMap<>();
 
     private final List<ExpansionRecord> expansions;
     private final List<Waypoint> waypoints;
@@ -250,15 +246,6 @@ public final class MapEntryData {
         if (waypointShareCharges <= 0) return false;
         waypointShareCharges--;
         return true;
-    }
-
-    public boolean structureChunkNeedsScan(long chunkPosLong, int currentDiscoveredPixelCount) {
-        Integer previous = structureChunkScanCoverage.get(chunkPosLong);
-        return previous == null || currentDiscoveredPixelCount > previous;
-    }
-
-    public void markStructureChunkScanned(long chunkPosLong, int discoveredPixelCount) {
-        structureChunkScanCoverage.put(chunkPosLong, discoveredPixelCount);
     }
 
     private static final Codec<byte[]> BITMASK_CODEC = Codec.LONG.listOf().xmap(

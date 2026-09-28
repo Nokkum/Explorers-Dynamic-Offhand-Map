@@ -50,7 +50,13 @@ public record WaypointSharePayload(MapIdentity mapId, UUID waypointId, String ta
 
         MapIdentity heldRoot = MapIdentity.ofStack(offHand, sender.getServerWorld());
         var savedData = ExplorerMapSavedData.get(sender.getServer());
-        if (heldRoot == null || !savedData.isAccessibleFrom(heldRoot, payload.mapId())) return;
+
+        if (MapIdentity.resolveAuthorized(sender.getServer(), savedData, heldRoot, payload.mapId()) == null) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] ShareWaypoint: rejected from {} - map {} is invalid or not accessible from the held map",
+                    sender.getName().getString(), payload.mapId().asKey());
+            return;
+        }
 
         var entry = savedData.get(payload.mapId());
         if (entry == null) return;
@@ -78,7 +84,14 @@ public record WaypointSharePayload(MapIdentity mapId, UUID waypointId, String ta
         }
 
         SyncWaypointsPayload.broadcastTo(sender.getServer(), payload.mapId());
-        SyncWaypointsPayload.sendTo(target, payload.mapId());
+
+        MapIdentity targetHeld = MapIdentity.ofStack(
+                target.getStackInHand(Hand.OFF_HAND), target.getServerWorld());
+        if (targetHeld != null
+                && !targetHeld.equals(payload.mapId())
+                && savedData.isAccessibleFrom(targetHeld, payload.mapId())) {
+            SyncWaypointsPayload.sendTo(target, payload.mapId());
+        }
         ExplorerMapMod.LOGGER.info(
                 "[ExplorerMap] Shared waypoint '{}' from {} to {} using one compass",
                 waypoint.name(), sender.getName().getString(), target.getName().getString());
