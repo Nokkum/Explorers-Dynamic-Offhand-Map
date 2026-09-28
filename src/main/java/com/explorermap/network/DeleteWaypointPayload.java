@@ -49,15 +49,14 @@ public record DeleteWaypointPayload(MapIdentity mapId, UUID waypointId) implemen
         MapIdentity heldRoot = MapIdentity.ofStack(offHand, player.getServerWorld());
         var savedData = ExplorerMapSavedData.get(player.getServer());
 
-        if (heldRoot == null || !savedData.isAccessibleFrom(heldRoot, payload.mapId())) {
+        var mapState = MapIdentity.resolveAuthorized(
+                player.getServer(), savedData, heldRoot, payload.mapId());
+        if (mapState == null) {
             ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] DeleteWaypoint: rejected from {} - map {} is not the held map or a known expansion of it",
+                    "[ExplorerMap] DeleteWaypoint: rejected from {} - map {} is invalid or not accessible from the held map",
                     player.getName().getString(), payload.mapId().asKey());
             return;
         }
-
-        var mapState = MapIdentity.resolveAndVerify(player.getServer(), payload.mapId());
-        if (mapState == null) return;
 
         if (!savedData.canManageWaypoint(payload.mapId(), payload.waypointId(), player.getUuid())) {
             ExplorerMapMod.LOGGER.warn(

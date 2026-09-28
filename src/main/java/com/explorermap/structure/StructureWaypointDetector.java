@@ -16,7 +16,6 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.gen.structure.Structure;
 
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -32,7 +31,8 @@ public final class StructureWaypointDetector {
                                       ServerPlayerEntity player,
                                       MapIdentity mapId,
                                       MapState mapState,
-                                      ExplorerMapSavedData savedData) {
+                                      ExplorerMapSavedData savedData,
+                                      Set<Integer> newlyDiscoveredBits) {
         ServerWorld world = server.getWorld(mapState.dimension);
         if (world == null) return;
 
@@ -44,24 +44,16 @@ public final class StructureWaypointDetector {
         MapEntryData entry = savedData.getOrCreate(mapId);
         byte[] bitmask = savedData.aggregateDiscoveredPixels(mapId);
 
-        Map<Long, Integer> currentCoverage = new HashMap<>();
-        for (int row = 0; row < 128; row++) {
-            for (int col = 0; col < 128; col++) {
-                int bit = row * 128 + col;
-                if ((bitmask[bit >> 3] & (1 << (bit & 7))) == 0) continue;
-
-                int wx = minX + col * scale + scale / 2;
-                int wz = minZ + row * scale + scale / 2;
-                long chunkKey = new ChunkPos(new BlockPos(wx, 64, wz)).toLong();
-                currentCoverage.merge(chunkKey, 1, Integer::sum);
-            }
-        }
+        Set<Integer> bitsToConsider = newlyDiscoveredBits != null
+                ? newlyDiscoveredBits
+                : allDiscoveredBits(bitmask);
 
         Set<Long> chunksToScan = new HashSet<>();
-        for (Map.Entry<Long, Integer> coverage : currentCoverage.entrySet()) {
-            if (entry.structureChunkNeedsScan(coverage.getKey(), coverage.getValue())) {
-                chunksToScan.add(coverage.getKey());
-            }
+        for (int bit : bitsToConsider) {
+            int col = bit % 128, row = bit / 128;
+            int wx = minX + col * scale + scale / 2;
+            int wz = minZ + row * scale + scale / 2;
+            chunksToScan.add(new ChunkPos(new BlockPos(wx, 64, wz)).toLong());
         }
 
         if (chunksToScan.isEmpty()) return;
@@ -70,13 +62,9 @@ public final class StructureWaypointDetector {
 
         for (long chunkKey : chunksToScan) {
             ChunkPos chunkPos = new ChunkPos(chunkKey);
-            if (!world.isChunkLoaded(chunkPos.x, chunkPos.z)) {
-                continue;
-            }
+            if (!world.isChunkLoaded(chunkPos.x, chunkPos.z)) continue;
 
             var chunk = world.getChunk(chunkPos.x, chunkPos.z);
-            entry.markStructureChunkScanned(chunkKey, currentCoverage.get(chunkKey));
-
             Map<Structure, StructureStart> starts = chunk.getStructureStarts();
             if (starts.isEmpty()) continue;
 
@@ -110,6 +98,17 @@ public final class StructureWaypointDetector {
         if (placedAny) {
             SyncWaypointsPayload.broadcastTo(server, mapId);
         }
+    }
+
+    private static Set<Integer> allDiscoveredBits(byte[] bitmask) {
+        Set<Integer> bits = new HashSet<>();
+        for (int i = 0; i < bitmask.length; i++) {
+            if (bitmask[i] == 0) continue;
+            for (int b = 0; b < 8; b++) {
+                if ((bitmask[i] & (1 << b)) != 0) bits.add(i * 8 + b);
+            }
+        }
+        return bits;
     }
 
     private static boolean structureOverlapsDiscovered(StructureStart start, byte[] bitmask,

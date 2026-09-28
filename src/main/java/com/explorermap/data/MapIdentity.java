@@ -68,6 +68,13 @@ public record MapIdentity(RegistryKey<World> dimension, int mapId) {
         return state;
     }
 
+    public static MapState resolveAuthorized(MinecraftServer server, ExplorerMapSavedData savedData,
+                                              MapIdentity heldRoot, MapIdentity claimed) {
+        if (heldRoot == null || claimed == null) return null;
+        if (!savedData.isAccessibleFrom(heldRoot, claimed)) return null;
+        return resolveAndVerify(server, claimed);
+    }
+
     public String asKey() {
         return dimension.getValue() + "#" + mapId;
     }

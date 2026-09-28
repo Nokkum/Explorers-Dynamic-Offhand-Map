@@ -12,7 +12,6 @@ import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
@@ -20,6 +19,8 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
+
+import java.util.Set;
 
 public final class SyncDiscoveryPayload {
 
@@ -66,14 +67,15 @@ public final class SyncDiscoveryPayload {
             }
 
             var savedData = ExplorerMapSavedData.get(server);
-            boolean changed = savedData.mergePlayerBitmask(
+            Set<Integer> newlyDiscovered = savedData.mergePlayerBitmask(
                     payload.mapId(), sender.getUuid(), payload.bitmask());
-            if (!changed) return;
+            if (newlyDiscovered.isEmpty()) return;
 
             ExplorerMapMod.LOGGER.debug("[ExplorerMap] Merged discovery for map {} from {}",
                     payload.mapId().asKey(), sender.getName().getString());
 
-            StructureWaypointDetector.checkAndPlace(server, sender, payload.mapId(), mapState, savedData);
+            StructureWaypointDetector.checkAndPlace(
+                    server, sender, payload.mapId(), mapState, savedData, newlyDiscovered);
 
             sendTo(sender, payload.mapId(), savedData);
         }
@@ -105,12 +107,6 @@ public final class SyncDiscoveryPayload {
 
         @Environment(EnvType.CLIENT)
         private static void handleOnClient(Broadcast payload) {
-            var client = MinecraftClient.getInstance();
-            if (client.world == null) return;
-
-            var mapState = MapIdentity.stateOf(payload.mapId().mapId(), client.world);
-            if (mapState == null) return;
-
             var mapEntry = ClientMapCache.getOrCreate(payload.mapId());
             mapEntry.replaceBitmask(payload.bitmask());
         }

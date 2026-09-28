@@ -8,16 +8,15 @@ import com.explorermap.registry.ExplorerMapRegistry;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Hand;
 
 public record GrantExpansionPayload(
         ExpansionRecord.Direction direction,
-        MapIdentity mapId,
+        MapIdentity sourceMap,
+        MapIdentity targetMap,
         boolean highDetail
 ) implements CustomPayload {
 
@@ -27,8 +26,9 @@ public record GrantExpansionPayload(
     public static final PacketCodec<PacketByteBuf, GrantExpansionPayload> CODEC =
             PacketCodec.tuple(
                     ExpansionRecord.Direction.PACKET_CODEC, GrantExpansionPayload::direction,
-                    MapIdentity.PACKET_CODEC,  GrantExpansionPayload::mapId,
-                    PacketCodecs.BOOL,     GrantExpansionPayload::highDetail,
+                    MapIdentity.PACKET_CODEC, GrantExpansionPayload::sourceMap,
+                    MapIdentity.PACKET_CODEC, GrantExpansionPayload::targetMap,
+                    PacketCodecs.BOOL,        GrantExpansionPayload::highDetail,
                     GrantExpansionPayload::new
             );
 
@@ -43,21 +43,20 @@ public record GrantExpansionPayload(
 
     @Environment(EnvType.CLIENT)
     private static void handleOnClient(GrantExpansionPayload payload) {
-        var client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) return;
+        if (!payload.sourceMap().dimension().equals(payload.targetMap().dimension())) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] Ignoring a cross-dimension expansion grant: {} -> {}",
+                    payload.sourceMap().asKey(), payload.targetMap().asKey());
+            return;
+        }
 
-        var offHand = client.player.getStackInHand(Hand.OFF_HAND);
-        if (!ExplorerMapMod.isFilledMap(offHand)) return;
-
-        MapIdentity heldMapId = MapIdentity.ofStack(offHand, client.world);
-        if (heldMapId == null) return;
-
-        var mapEntry = ClientMapCache.getOrCreate(heldMapId);
+        var mapEntry = ClientMapCache.getOrCreate(payload.sourceMap());
         if (!mapEntry.hasExpansion(payload.direction())) {
             mapEntry.addExpansion(new ExpansionRecord(
-                    payload.direction(), payload.mapId(), payload.highDetail()));
-            ExplorerMapMod.LOGGER.info("[ExplorerMap] Expansion granted: {} -> map {} (HD:{})",
-                    payload.direction(), payload.mapId().asKey(), payload.highDetail());
+                    payload.direction(), payload.targetMap(), payload.highDetail()));
+            ExplorerMapMod.LOGGER.info("[ExplorerMap] Expansion granted: {} {} -> map {} (HD:{})",
+                    payload.sourceMap().asKey(), payload.direction(),
+                    payload.targetMap().asKey(), payload.highDetail());
         }
     }
 }

@@ -10,7 +10,6 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
@@ -79,12 +78,6 @@ public record SyncWaypointsPayload(
                     payload.waypoints().size());
             return;
         }
-
-        var client = MinecraftClient.getInstance();
-        if (client.world == null) return;
-
-        var mapState = MapIdentity.stateOf(payload.mapId().mapId(), client.world);
-        if (mapState == null) return;
 
         var mapEntry = ClientMapCache.getOrCreate(payload.mapId());
         mapEntry.replaceAllWaypoints(payload.waypoints());

@@ -47,9 +47,8 @@ public final class ServerEventHandler {
 
     private static void onPlayerJoin(ServerPlayerEntity player) {
         syncMapForPlayer(player, player.getStackInHand(Hand.OFF_HAND));
-        for (int i = 0; i < 9; i++) {
-            syncMapForPlayer(player, player.getInventory().getStack(i));
-        }
+        var inventory = player.getInventory();
+        syncMapForPlayer(player, inventory.getStack(inventory.selectedSlot));
     }
 
     private static void syncMapForPlayer(ServerPlayerEntity player, ItemStack stack) {
@@ -66,7 +65,7 @@ public final class ServerEventHandler {
         SyncDiscoveryPayload.sendTo(player, mapId);
 
         var savedData = ExplorerMapSavedData.get(player.getServer());
-        StructureWaypointDetector.checkAndPlace(player.getServer(), player, mapId, mapState, savedData);
+        StructureWaypointDetector.checkAndPlace(player.getServer(), player, mapId, mapState, savedData, null);
 
         ExplorerMapMod.LOGGER.debug(
                 "[ExplorerMap] Join-sync map {} for {}", mapId.asKey(), player.getName().getString());
