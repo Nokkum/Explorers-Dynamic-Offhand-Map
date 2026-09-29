@@ -121,7 +121,7 @@ public class ExplorerMapSavedData extends PersistentState {
             byte before = current[i];
             current[i] |= bitmask[i];
             changed |= before != current[i];
-        }.
+        }
         boolean legacyChanged = getOrCreate(mapId).mergeBitmask(bitmask);
         if (changed || legacyChanged) markDirty();
 
