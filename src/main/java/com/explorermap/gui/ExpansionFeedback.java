@@ -36,6 +36,7 @@ public final class ExpansionFeedback {
             case MISSING_INK_OR_COMPASS   -> "explorermap.expansion.fail.missing_ink_or_compass";
             case ALREADY_EXPANDED         -> "explorermap.expansion.fail.already_expanded";
             case NO_MAP_IN_OFFHAND        -> "explorermap.expansion.fail.no_map";
+            case CYCLE_DETECTED           -> "explorermap.expansion.fail.cycle_detected";
         };
         return Text.translatable(key).getString();
     }

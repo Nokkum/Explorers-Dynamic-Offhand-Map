@@ -9,7 +9,6 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
@@ -26,7 +25,7 @@ public record SaveWaypointPayload(MapIdentity mapId, Waypoint waypoint) implemen
     public static final PacketCodec<PacketByteBuf, SaveWaypointPayload> CODEC =
             PacketCodec.tuple(
                     MapIdentity.PACKET_CODEC,           SaveWaypointPayload::mapId,
-                    PacketCodecs.codec(Waypoint.CODEC),  SaveWaypointPayload::waypoint,
+                    Waypoint.PACKET_CODEC,               SaveWaypointPayload::waypoint,
                     SaveWaypointPayload::new
             );
 

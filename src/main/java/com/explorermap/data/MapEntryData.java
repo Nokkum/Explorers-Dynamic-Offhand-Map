@@ -23,6 +23,7 @@ public final class MapEntryData {
     private static final int MAX_ICON_ID_LENGTH = 128;
     private static final int MAX_WAYPOINTS_ON_LOAD = 4096;
     private static final int MAX_EXPANSIONS_ON_LOAD = 4096;
+    private static final int MAX_PENDING_STRUCTURE_CHUNKS = 4096;
 
     private final byte[] discoveredPixels;
     private transient byte[] recentPixels;
@@ -30,6 +31,7 @@ public final class MapEntryData {
 
     private final List<ExpansionRecord> expansions;
     private final List<Waypoint> waypoints;
+    private final Set<Long> pendingStructureChunks;
     private int waypointCapacity;
     private int waypointShareCharges;
 
@@ -41,16 +43,19 @@ public final class MapEntryData {
         this.recentPixels = new byte[PIXEL_COUNT];
         this.expansions = new ArrayList<>();
         this.waypoints = new ArrayList<>();
+        this.pendingStructureChunks = new HashSet<>();
         this.waypointCapacity = 0;
         this.waypointShareCharges = 0;
     }
 
-    private MapEntryData(byte[] discoveredPixels, List<ExpansionRecord> expansions, List<Waypoint> waypoints) {
+    private MapEntryData(byte[] discoveredPixels, List<ExpansionRecord> expansions, List<Waypoint> waypoints,
+                          Set<Long> pendingStructureChunks) {
         this.discoveredPixels = discoveredPixels.length == BYTE_COUNT
                 ? discoveredPixels.clone() : new byte[BYTE_COUNT];
         this.recentPixels = new byte[PIXEL_COUNT];
         this.expansions = new ArrayList<>(expansions);
         this.waypoints = new ArrayList<>(waypoints);
+        this.pendingStructureChunks = new HashSet<>(pendingStructureChunks);
         this.waypointCapacity = 0;
         this.waypointShareCharges = 0;
     }
@@ -248,6 +253,19 @@ public final class MapEntryData {
         return true;
     }
 
+    public Set<Long> getPendingStructureChunks() {
+        return Set.copyOf(pendingStructureChunks);
+    }
+
+    public void addPendingStructureChunk(long chunkPosLong) {
+        if (pendingStructureChunks.size() >= MAX_PENDING_STRUCTURE_CHUNKS) return;
+        pendingStructureChunks.add(chunkPosLong);
+    }
+
+    public void removePendingStructureChunk(long chunkPosLong) {
+        pendingStructureChunks.remove(chunkPosLong);
+    }
+
     private static final Codec<byte[]> BITMASK_CODEC = Codec.LONG.listOf().xmap(
             longs -> {
                 byte[] arr = new byte[BYTE_COUNT];
@@ -285,9 +303,12 @@ public final class MapEntryData {
                             .fieldOf("expansions").forGetter(d -> d.expansions),
                     CodecUtil.boundedList(Waypoint.CODEC, MAX_WAYPOINTS_ON_LOAD, "waypoints")
                             .fieldOf("waypoints").forGetter(d -> d.waypoints),
+                    CodecUtil.boundedList(Codec.LONG, MAX_PENDING_STRUCTURE_CHUNKS, "pending_structure_chunks")
+                            .optionalFieldOf("pending_structure_chunks", List.of())
+                            .forGetter(d -> List.copyOf(d.pendingStructureChunks)),
                     Codec.INT.optionalFieldOf("waypoint_capacity", 0).forGetter(d -> d.waypointCapacity),
                     Codec.INT.optionalFieldOf("waypoint_share_charges", 0).forGetter(d -> d.waypointShareCharges)
-            ).apply(instance, (pixels, expansions, waypoints, capacity, shareCharges) -> {
+            ).apply(instance, (pixels, expansions, waypoints, pendingChunks, capacity, shareCharges) -> {
                 List<ExpansionRecord> safeExpansions = new ArrayList<>(expansions.size());
                 Set<ExpansionRecord.Direction> seenDirections = new HashSet<>();
                 for (ExpansionRecord record : expansions) {
@@ -300,11 +321,11 @@ public final class MapEntryData {
                 Set<UUID> seenIds = new HashSet<>();
                 for (Waypoint wp : waypoints) {
                     if (!isValidOnLoad(wp)) continue;
-                    if (!seenIds.add(wp.id())) continue; // duplicate id on disk - keep the first occurrence
+                    if (!seenIds.add(wp.id())) continue;
                     safeWaypoints.add(wp);
                 }
 
-                MapEntryData data = new MapEntryData(pixels, safeExpansions, safeWaypoints);
+                MapEntryData data = new MapEntryData(pixels, safeExpansions, safeWaypoints, new HashSet<>(pendingChunks));
                 data.waypointCapacity = Math.max(0, capacity);
                 data.waypointShareCharges = Math.max(0, shareCharges);
                 return data;

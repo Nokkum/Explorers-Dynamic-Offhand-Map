@@ -21,7 +21,8 @@ public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason
         MISSING_PAPER,
         MISSING_INK_OR_COMPASS,
         ALREADY_EXPANDED,
-        NO_MAP_IN_OFFHAND;
+        NO_MAP_IN_OFFHAND,
+        CYCLE_DETECTED;
 
         static final PacketCodec<PacketByteBuf, Reason> PACKET_CODEC = PacketCodec.of(
                 (Reason value, PacketByteBuf buf) -> buf.writeString(value.name()),

@@ -20,6 +20,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 public final class SyncDiscoveryPayload {
@@ -49,24 +51,17 @@ public final class SyncDiscoveryPayload {
             var offHand = sender.getStackInHand(Hand.OFF_HAND);
             if (!ExplorerMapMod.isFilledMap(offHand)) return;
 
-            var mapState = MapIdentity.resolveAndVerify(server, payload.mapId());
+            MapIdentity heldRoot = MapIdentity.ofStack(offHand, sender.getServerWorld());
+            var savedData = ExplorerMapSavedData.get(server);
+
+            var mapState = MapIdentity.resolveAuthorized(server, savedData, heldRoot, payload.mapId());
             if (mapState == null) {
                 ExplorerMapMod.LOGGER.warn(
-                        "[ExplorerMap] Rejected discovery upload for map {} from {} - map does not exist "
-                                + "or its dimension does not match the claim",
+                        "[ExplorerMap] Rejected discovery upload for map {} from {} - invalid or not accessible from the held map",
                         payload.mapId().asKey(), sender.getName().getString());
                 return;
             }
 
-            MapIdentity heldId = MapIdentity.ofStack(offHand, sender.getServerWorld());
-            if (!payload.mapId().equals(heldId)) {
-                ExplorerMapMod.LOGGER.warn(
-                        "[ExplorerMap] Rejected discovery upload for map {} from {} - not holding that map",
-                        payload.mapId().asKey(), sender.getName().getString());
-                return;
-            }
-
-            var savedData = ExplorerMapSavedData.get(server);
             Set<Integer> newlyDiscovered = savedData.mergePlayerBitmask(
                     payload.mapId(), sender.getUuid(), payload.bitmask());
             if (newlyDiscovered.isEmpty()) return;
@@ -124,24 +119,30 @@ public final class SyncDiscoveryPayload {
     public static final int UPLOAD_INTERVAL_TICKS = 60;
 
     private static int ticksSinceLastUpload = 0;
-    private static long lastUploadedGeneration = -1L;
+    private static final Map<MapIdentity, Long> lastUploadedGeneration = new HashMap<>();
 
     @Environment(EnvType.CLIENT)
     public static void resetUploadState() {
-        ticksSinceLastUpload   = 0;
-        lastUploadedGeneration = -1L;
+        ticksSinceLastUpload = 0;
+        lastUploadedGeneration.clear();
     }
 
     @Environment(EnvType.CLIENT)
-    public static boolean shouldUpload(long currentGeneration) {
+    public static boolean uploadWindowOpen() {
         ticksSinceLastUpload++;
         if (ticksSinceLastUpload < UPLOAD_INTERVAL_TICKS) return false;
-        if (currentGeneration == lastUploadedGeneration) {
-            ticksSinceLastUpload = 0;
-            return false;
-        }
-        ticksSinceLastUpload   = 0;
-        lastUploadedGeneration = currentGeneration;
+        ticksSinceLastUpload = 0;
         return true;
+    }
+
+    @Environment(EnvType.CLIENT)
+    public static boolean isDirty(MapIdentity mapId, long currentGeneration) {
+        Long previous = lastUploadedGeneration.get(mapId);
+        return previous == null || previous != currentGeneration;
+    }
+
+    @Environment(EnvType.CLIENT)
+    public static void markUploaded(MapIdentity mapId, long generation) {
+        lastUploadedGeneration.put(mapId, generation);
     }
 }

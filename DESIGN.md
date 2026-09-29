@@ -62,7 +62,6 @@
 
 - Corner placement (top-left, top-right, etc.)
 - Scale and opacity
-- Enable/disable expansion arrows
 </details>
 
 <details>

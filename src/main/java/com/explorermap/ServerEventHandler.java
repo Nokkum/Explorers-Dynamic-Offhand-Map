@@ -8,6 +8,7 @@ import com.explorermap.structure.StructureWaypointDetector;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.item.ItemStack;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
 
@@ -18,8 +19,12 @@ import java.util.UUID;
 
 public final class ServerEventHandler {
 
+    private static final int OFFHAND_CHECK_INTERVAL_TICKS = 10;
+    private static final int PENDING_STRUCTURE_RETRY_INTERVAL_TICKS = 400;
+
     private static final Map<UUID, MapIdentity> LAST_OFFHAND_MAP = new HashMap<>();
-    private static int tickCounter;
+    private static int offHandCheckCounter;
+    private static int pendingRetryCounter;
 
     private ServerEventHandler() {}
 
@@ -32,17 +37,38 @@ public final class ServerEventHandler {
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 LAST_OFFHAND_MAP.remove(handler.getPlayer().getUuid()));
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            if (++tickCounter % 10 != 0) return;
-            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-                ItemStack offHand = player.getStackInHand(Hand.OFF_HAND);
-                MapIdentity mapId = ExplorerMapMod.isFilledMap(offHand)
-                        ? MapIdentity.ofStack(offHand, player.getServerWorld()) : null;
-                MapIdentity previous = LAST_OFFHAND_MAP.put(player.getUuid(), mapId);
-                if (!Objects.equals(previous, mapId)) {
-                    syncMapForPlayer(player, offHand);
-                }
+            if (++offHandCheckCounter >= OFFHAND_CHECK_INTERVAL_TICKS) {
+                offHandCheckCounter = 0;
+                checkOffHandChanges(server);
+            }
+            if (++pendingRetryCounter >= PENDING_STRUCTURE_RETRY_INTERVAL_TICKS) {
+                pendingRetryCounter = 0;
+                retryPendingStructureChunks(server);
             }
         });
+    }
+
+    private static void checkOffHandChanges(MinecraftServer server) {
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            ItemStack offHand = player.getStackInHand(Hand.OFF_HAND);
+            MapIdentity mapId = ExplorerMapMod.isFilledMap(offHand)
+                    ? MapIdentity.ofStack(offHand, player.getServerWorld()) : null;
+            MapIdentity previous = LAST_OFFHAND_MAP.put(player.getUuid(), mapId);
+            if (!Objects.equals(previous, mapId)) {
+                syncMapForPlayer(player, offHand);
+            }
+        }
+    }
+
+    private static void retryPendingStructureChunks(MinecraftServer server) {
+        var savedData = ExplorerMapSavedData.get(server);
+        for (MapIdentity mapId : savedData.mapsWithPendingStructureChunks()) {
+            var world = server.getWorld(mapId.dimension());
+            if (world == null) continue;
+            var mapState = MapIdentity.stateOf(mapId.mapId(), world);
+            if (mapState == null) continue;
+            StructureWaypointDetector.retryPending(server, mapId, mapState, savedData);
+        }
     }
 
     private static void onPlayerJoin(ServerPlayerEntity player) {

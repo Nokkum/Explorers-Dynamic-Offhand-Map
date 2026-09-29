@@ -13,7 +13,8 @@ The Explorer's Dynamic Offhand Map is Licensed under the [Apache 2.0 License](ht
 <details>
 <summary>Optional</summary>
 
-## **Diagram**
+<details>
+<summary> **Diagrams** </summary>
 
 ### **Component and Data Flow**
 <details>
@@ -23,4 +24,8 @@ The Explorer's Dynamic Offhand Map is Licensed under the [Apache 2.0 License](ht
 </details>
 
 > Detailed component and data-flow diagram showing client/server interactions, network synchronization, map state, and rendering.
+
+> for more diagrams, infer by clicking [this](https://github.com/Nokkum/Explorers-Dynamic-Offhand-Map/tree/main/.github/resources/png).
+</details>
+
 </details>

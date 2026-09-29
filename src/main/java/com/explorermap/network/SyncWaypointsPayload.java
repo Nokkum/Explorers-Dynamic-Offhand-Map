@@ -37,7 +37,7 @@ public record SyncWaypointsPayload(
             PacketCodec.tuple(
                     MapIdentity.PACKET_CODEC,
                     SyncWaypointsPayload::mapId,
-                    PacketCodecs.collection(ArrayList::new, PacketCodecs.codec(Waypoint.CODEC)),
+                    PacketCodecs.collection(ArrayList::new, Waypoint.PACKET_CODEC),
                     SyncWaypointsPayload::waypoints,
                     PacketCodecs.VAR_INT, SyncWaypointsPayload::waypointCapacity,
                     PacketCodecs.VAR_INT, SyncWaypointsPayload::waypointShareCharges,

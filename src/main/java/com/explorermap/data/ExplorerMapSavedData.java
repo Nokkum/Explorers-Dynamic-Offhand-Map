@@ -65,6 +65,14 @@ public class ExplorerMapSavedData extends PersistentState {
         return entries.get(mapId);
     }
 
+    public List<MapIdentity> mapsWithPendingStructureChunks() {
+        List<MapIdentity> result = new ArrayList<>();
+        entries.forEach((id, entry) -> {
+            if (!entry.getPendingStructureChunks().isEmpty()) result.add(id);
+        });
+        return result;
+    }
+
     public boolean mergeBitmask(MapIdentity mapId, byte[] bitmask) {
         boolean changed = getOrCreate(mapId).mergeBitmask(bitmask);
         if (changed) markDirty();
@@ -113,7 +121,7 @@ public class ExplorerMapSavedData extends PersistentState {
             byte before = current[i];
             current[i] |= bitmask[i];
             changed |= before != current[i];
-        }
+        }.
         boolean legacyChanged = getOrCreate(mapId).mergeBitmask(bitmask);
         if (changed || legacyChanged) markDirty();
 
@@ -308,7 +316,7 @@ public class ExplorerMapSavedData extends PersistentState {
                 instance.group(
                         MapIdentity.CODEC.fieldOf("map_id").forGetter(DiscoveryRow::mapId),
                         Codec.STRING.fieldOf("player_uuid").forGetter(DiscoveryRow::playerUuid),
-                        Codec.BYTE.listOf().xmap(
+                        CodecUtil.boundedList(Codec.BYTE, MapEntryData.BYTE_COUNT, "bitmask").xmap(
                                 list -> {
                                     byte[] result = new byte[MapEntryData.BYTE_COUNT];
                                     for (int i = 0; i < Math.min(result.length, list.size()); i++) {

@@ -115,6 +115,15 @@ public record RequestExpansionPayload(
             return;
         }
 
+        if (savedData.isAccessibleFrom(newMapId, mapId)) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] Expansion rejected: {} -> {} would create a cycle",
+                    mapId.asKey(), newMapId.asKey());
+            ExpansionFailedPayload.sendTo(player, payload.direction(),
+                    ExpansionFailedPayload.Reason.CYCLE_DETECTED);
+            return;
+        }
+
         consumeResources(player, payload.highDetail());
 
         savedData.addExpansion(mapId,

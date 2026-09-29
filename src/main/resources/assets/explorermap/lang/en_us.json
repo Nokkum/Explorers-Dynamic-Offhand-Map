@@ -66,6 +66,7 @@
   "explorermap.expansion.fail.missing_ink_or_compass": "Missing Ink Sac or Compass",
   "explorermap.expansion.fail.already_expanded": "Already expanded this direction",
   "explorermap.expansion.fail.no_map": "No map in off-hand",
+  "explorermap.expansion.fail.cycle_detected": "Would reconnect to an existing map",
   "explorermap.dimension.overworld": "Overworld",
   "explorermap.dimension.nether": "Nether",
   "explorermap.dimension.end": "The End"

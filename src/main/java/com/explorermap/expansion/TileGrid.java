@@ -8,10 +8,16 @@ import net.minecraft.client.world.ClientWorld;
 import net.minecraft.component.type.MapIdComponent;
 import net.minecraft.item.map.MapState;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class TileGrid {
+
+    private static final int MAX_TILES = 256;
 
     public record TileEntry(
             MapIdentity mapId,
@@ -64,30 +70,43 @@ public final class TileGrid {
         TileGrid grid = new TileGrid();
         grid.tiles.add(new TileEntry(rootMapId, rootState, rootEntry, 0, 0));
 
-        List<ExpansionRecord> expansionSnapshot = rootEntry.getExpansions();
+        Set<MapIdentity> visited = new HashSet<>();
+        visited.add(rootMapId);
 
-        for (ExpansionRecord exp : expansionSnapshot) {
-            int gx = 0, gz = 0;
-            switch (exp.direction()) {
-                case NORTH -> gz = -1;
-                case SOUTH -> gz =  1;
-                case WEST  -> gx = -1;
-                case EAST  -> gx =  1;
+        Deque<TileEntry> queue = new ArrayDeque<>();
+        queue.add(grid.tiles.get(0));
+
+        while (!queue.isEmpty() && grid.tiles.size() < MAX_TILES) {
+            TileEntry current = queue.removeFirst();
+
+            for (ExpansionRecord exp : current.entry().getExpansions()) {
+                MapIdentity target = exp.target();
+                if (!visited.add(target)) continue;
+                if (grid.tiles.size() >= MAX_TILES) break;
+
+                if (!target.dimension().equals(world.getRegistryKey())) {
+                    ExplorerMapMod.LOGGER.warn(
+                            "[ExplorerMap] Skipping expansion to {} - it isn't in the current dimension {}",
+                            target.asKey(), world.getRegistryKey().getValue());
+                    continue;
+                }
+
+                MapState adjState = world.getMapState(new MapIdComponent(target.mapId()));
+                if (adjState == null) continue;
+
+                int gx = current.gridX(), gz = current.gridZ();
+                switch (exp.direction()) {
+                    case NORTH -> gz -= 1;
+                    case SOUTH -> gz += 1;
+                    case WEST  -> gx -= 1;
+                    case EAST  -> gx += 1;
+                }
+
+                MapEntryData adjEntry = ClientMapCache.getOrCreate(target);
+                TileEntry adjTile = new TileEntry(target, adjState, adjEntry, gx, gz);
+                grid.tiles.add(adjTile);
+                queue.addLast(adjTile);
             }
-
-            MapIdentity target = exp.target();
-            if (!target.dimension().equals(world.getRegistryKey())) {
-                ExplorerMapMod.LOGGER.warn(
-                        "[ExplorerMap] Skipping expansion to {} - it isn't in the current dimension {}",
-                        target.asKey(), world.getRegistryKey().getValue());
-                continue;
-            }
-
-            MapState adjState = world.getMapState(new MapIdComponent(target.mapId()));
-            if (adjState == null) continue;
-
-            MapEntryData adjEntry = ClientMapCache.getOrCreate(target);
-            grid.tiles.add(new TileEntry(target, adjState, adjEntry, gx, gz));
         }
 
         return grid;
