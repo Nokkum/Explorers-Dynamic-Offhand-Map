@@ -57,7 +57,6 @@ public class ExplorerMapClient implements ClientModInitializer {
         KeyMapping.Category category = KeyMapping.Category.register(ExplorerMapRegistry.id("main"));
         OPEN_MAP_KEY = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.explorermap.open_map",
-                InputConstants.Type.KEYSYM,
                 InputConstants.KEY_M,
                 category
         ));

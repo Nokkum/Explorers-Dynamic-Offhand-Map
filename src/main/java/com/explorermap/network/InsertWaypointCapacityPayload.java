@@ -40,7 +40,8 @@ public record InsertWaypointCapacityPayload(BlockPos tablePos) implements Custom
     private static void handleOnServer(ServerPlayer player,
                                        InsertWaypointCapacityPayload payload) {
         if (!player.level().getBlockState(payload.tablePos()).is(Blocks.CARTOGRAPHY_TABLE)
-                || player.distanceToSqr(payload.tablePos().getCenter()) > 64.0) {
+                || player.distanceToSqr(payload.tablePos().getX() + 0.5, payload.tablePos().getY() + 0.5,
+                        payload.tablePos().getZ() + 0.5) > 64.0) {
             return;
         }
 
