@@ -6,50 +6,50 @@ import com.explorermap.data.MapIdentity;
 import com.explorermap.registry.ExplorerMapRegistry;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Hand;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 
-public record ShareDiscoveryPayload(MapIdentity mapId, String targetName) implements CustomPayload {
+public record ShareDiscoveryPayload(MapIdentity mapId, String targetName) implements CustomPacketPayload {
 
     private static final int MAX_NAME_LENGTH = 64;
 
-    public static final CustomPayload.Id<ShareDiscoveryPayload> ID =
-            new CustomPayload.Id<>(ExplorerMapRegistry.id("share_discovery"));
+    public static final CustomPacketPayload.Type<ShareDiscoveryPayload> TYPE =
+            new CustomPacketPayload.Type<>(ExplorerMapRegistry.id("share_discovery"));
 
-    public static final PacketCodec<PacketByteBuf, ShareDiscoveryPayload> CODEC =
-            PacketCodec.tuple(
+    public static final StreamCodec<FriendlyByteBuf, ShareDiscoveryPayload> CODEC =
+            StreamCodec.composite(
                     MapIdentity.PACKET_CODEC, ShareDiscoveryPayload::mapId,
-                    PacketCodecs.string(MAX_NAME_LENGTH), ShareDiscoveryPayload::targetName,
+                    ByteBufCodecs.stringUtf8(MAX_NAME_LENGTH), ShareDiscoveryPayload::targetName,
                     ShareDiscoveryPayload::new
             );
 
     @Override
-    public CustomPayload.Id<? extends CustomPayload> getId() {
-        return ID;
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
     public static void register() {
-        PayloadTypeRegistry.playC2S().register(ID, CODEC);
-        ServerPlayNetworking.registerGlobalReceiver(ID, (payload, context) ->
+        PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) ->
                 context.server().execute(() -> handleOnServer(context.player(), payload)));
     }
 
-    private static void handleOnServer(ServerPlayerEntity sender, ShareDiscoveryPayload payload) {
-        var offHand = sender.getStackInHand(Hand.OFF_HAND);
+    private static void handleOnServer(ServerPlayer sender, ShareDiscoveryPayload payload) {
+        var offHand = sender.getItemInHand(InteractionHand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)
-                || MapIdentity.resolveAndVerify(sender.getServer(), payload.mapId()) == null
-                || !payload.mapId().equals(MapIdentity.ofStack(offHand, sender.getServerWorld()))) return;
+                || MapIdentity.resolveAndVerify(sender.level().getServer(), payload.mapId()) == null
+                || !payload.mapId().equals(MapIdentity.ofStack(offHand, sender.level()))) return;
 
-        ServerPlayerEntity target =
-                sender.getServer().getPlayerManager().getPlayer(payload.targetName().trim());
+        ServerPlayer target =
+                sender.level().getServer().getPlayerList().getPlayerByName(payload.targetName().trim());
         if (target == null || target == sender) return;
 
-        ExplorerMapSavedData savedData = ExplorerMapSavedData.get(sender.getServer());
-        if (!savedData.sharePlayerDiscovery(payload.mapId(), sender.getUuid(), target.getUuid())) return;
+        ExplorerMapSavedData savedData = ExplorerMapSavedData.get(sender.level().getServer());
+        if (!savedData.sharePlayerDiscovery(payload.mapId(), sender.getUUID(), target.getUUID())) return;
         SyncDiscoveryPayload.sendTo(target, payload.mapId());
     }
 }

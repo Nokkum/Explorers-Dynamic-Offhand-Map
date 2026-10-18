@@ -2,8 +2,8 @@ package com.explorermap.waypoint;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
 
 import java.util.UUID;
 
@@ -78,24 +78,24 @@ public record Waypoint(UUID id,
     private static final int MAX_NETWORK_ICON_LENGTH = 128;
     private static final int MAX_NETWORK_OWNER_LENGTH = 64;
 
-    public static final PacketCodec<PacketByteBuf, Waypoint> PACKET_CODEC = PacketCodec.of(
-            (Waypoint value, PacketByteBuf buf) -> {
-                buf.writeUuid(value.id());
-                buf.writeString(value.name(), MAX_NETWORK_NAME_LENGTH);
+    public static final StreamCodec<FriendlyByteBuf, Waypoint> PACKET_CODEC = StreamCodec.ofMember(
+            (Waypoint value, FriendlyByteBuf buf) -> {
+                buf.writeUUID(value.id());
+                buf.writeUtf(value.name(), MAX_NETWORK_NAME_LENGTH);
                 buf.writeDouble(value.worldX());
                 buf.writeDouble(value.worldZ());
-                buf.writeString(value.iconId(), MAX_NETWORK_ICON_LENGTH);
+                buf.writeUtf(value.iconId(), MAX_NETWORK_ICON_LENGTH);
                 buf.writeInt(value.color());
-                buf.writeString(value.ownerUuid() == null ? "" : value.ownerUuid(), MAX_NETWORK_OWNER_LENGTH);
+                buf.writeUtf(value.ownerUuid() == null ? "" : value.ownerUuid(), MAX_NETWORK_OWNER_LENGTH);
             },
-            (PacketByteBuf buf) -> new Waypoint(
-                    buf.readUuid(),
-                    buf.readString(MAX_NETWORK_NAME_LENGTH),
+            (FriendlyByteBuf buf) -> new Waypoint(
+                    buf.readUUID(),
+                    buf.readUtf(MAX_NETWORK_NAME_LENGTH),
                     buf.readDouble(),
                     buf.readDouble(),
-                    buf.readString(MAX_NETWORK_ICON_LENGTH),
+                    buf.readUtf(MAX_NETWORK_ICON_LENGTH),
                     buf.readInt(),
-                    buf.readString(MAX_NETWORK_OWNER_LENGTH)
+                    buf.readUtf(MAX_NETWORK_OWNER_LENGTH)
             )
     );
 }

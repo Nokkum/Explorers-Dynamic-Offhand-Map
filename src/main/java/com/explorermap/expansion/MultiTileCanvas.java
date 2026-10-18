@@ -1,6 +1,6 @@
 package com.explorermap.expansion;
 
-import net.minecraft.item.map.MapState;
+import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
 public final class MultiTileCanvas {
 
@@ -39,7 +39,7 @@ public final class MultiTileCanvas {
         this.worldOriginZ  = rootTileOriginZ + minGridZ * tileBlocks;
     }
 
-    public static MultiTileCanvas from(TileGrid grid, MapState rootState) {
+    public static MultiTileCanvas from(TileGrid grid, MapItemSavedData rootState) {
         int minGX = 0, maxGX = 0, minGZ = 0, maxGZ = 0;
         for (TileGrid.TileEntry t : grid.tiles()) {
             minGX = Math.min(minGX, t.gridX()); maxGX = Math.max(maxGX, t.gridX());

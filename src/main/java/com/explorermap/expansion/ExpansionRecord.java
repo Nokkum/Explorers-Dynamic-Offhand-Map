@@ -4,8 +4,8 @@ import com.explorermap.data.MapIdentity;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import io.netty.handler.codec.DecoderException;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
 
 public record ExpansionRecord(Direction direction, MapIdentity target, boolean highDetail) {
 
@@ -15,10 +15,10 @@ public record ExpansionRecord(Direction direction, MapIdentity target, boolean h
         public static final Codec<Direction> CODEC =
                 Codec.STRING.xmap(Direction::valueOf, Direction::name);
 
-        public static final PacketCodec<PacketByteBuf, Direction> PACKET_CODEC = PacketCodec.of(
-                (Direction value, PacketByteBuf buf) -> buf.writeString(value.name()),
-                (PacketByteBuf buf) -> {
-                    String raw = buf.readString();
+        public static final StreamCodec<FriendlyByteBuf, Direction> PACKET_CODEC = StreamCodec.ofMember(
+                (Direction value, FriendlyByteBuf buf) -> buf.writeUtf(value.name()),
+                (FriendlyByteBuf buf) -> {
+                    String raw = buf.readUtf();
                     try {
                         return Direction.valueOf(raw);
                     } catch (IllegalArgumentException e) {

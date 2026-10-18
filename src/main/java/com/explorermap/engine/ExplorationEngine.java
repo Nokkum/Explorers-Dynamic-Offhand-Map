@@ -12,16 +12,16 @@ import com.explorermap.network.SyncDiscoveryPayload;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.map.MapState;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.ClipContext;
 
 @Environment(EnvType.CLIENT)
 public class ExplorationEngine {
@@ -31,32 +31,32 @@ public class ExplorationEngine {
 
     private static int tickCounter = 0;
 
-    public static void tick(MinecraftClient client) {
+    public static void tick(Minecraft client) {
         ExplorerMapConfig cfg = ExplorerMapConfig.get();
         if (++tickCounter % cfg.discoveryTickInterval != 0) return;
 
-        ClientPlayerEntity player = client.player;
-        if (player == null || client.world == null) return;
+        LocalPlayer player = client.player;
+        if (player == null || client.level == null) return;
 
-        ItemStack offHand = player.getStackInHand(Hand.OFF_HAND);
+        ItemStack offHand = player.getItemInHand(InteractionHand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) return;
 
         int rawMapId = MapIdentity.rawIdOf(offHand);
         if (rawMapId < 0) return;
 
-        MapState mapState = MapIdentity.stateOf(offHand, client.world);
+        MapItemSavedData mapState = MapIdentity.stateOf(offHand, client.level);
         if (mapState == null) return;
 
         if (!DimensionMapTracker.isMapRelevantForCurrentDimension(player, mapState)) return;
 
         MapIdentity mapId = MapIdentity.of(mapState, rawMapId);
         MapEntryData mapEntry = ClientMapCache.getOrCreate(mapId);
-        TileGrid grid = TileGrid.build(mapId, mapState, mapEntry, client.world);
+        TileGrid grid = TileGrid.build(mapId, mapState, mapEntry, client.level);
         MultiTileCanvas canvas = MultiTileCanvas.from(grid, mapState);
 
-        float yawDeg   = player.getYaw();
-        float pitchDeg = player.getPitch();
-        float fovDeg   = (float) client.options.getFov().getValue();
+        float yawDeg   = player.getYRot();
+        float pitchDeg = player.getXRot();
+        float fovDeg   = (float) client.options.fov().get();
 
         if (cfg.fogOfDiscovery) {
             castRays(player, mapState, grid, canvas, yawDeg, pitchDeg, fovDeg, cfg.rayCount);
@@ -90,14 +90,14 @@ public class ExplorationEngine {
         }
     }
 
-    private static void castRays(ClientPlayerEntity player,
-                                  MapState mapState,
+    private static void castRays(LocalPlayer player,
+                                  MapItemSavedData mapState,
                                   TileGrid grid,
                                   MultiTileCanvas canvas,
                                   float yawDeg, float pitchDeg, float fovDeg,
                                   int hRays) {
 
-        Vec3d origin = player.getCameraPosVec(1.0f);
+        Vec3 origin = player.getEyePosition(1.0f);
         float halfFov = fovDeg * 0.5f;
 
         float[] vOffsets = { -8f, 0f, 8f };
@@ -109,29 +109,29 @@ public class ExplorationEngine {
                 float t   = hRays == 1 ? 0f : (float) i / (hRays - 1);
                 float yaw = yawDeg - halfFov + t * fovDeg;
 
-                Vec3d dir = directionFromAngles(yaw, pitch);
+                Vec3 dir = directionFromAngles(yaw, pitch);
                 markRayAcrossTiles(player, origin, dir, mapState, grid, canvas);
             }
         }
     }
 
-    private static void markRayAcrossTiles(ClientPlayerEntity player,
-                                            Vec3d origin, Vec3d dir,
-                                            MapState mapState,
+    private static void markRayAcrossTiles(LocalPlayer player,
+                                            Vec3 origin, Vec3 dir,
+                                            MapItemSavedData mapState,
                                             TileGrid grid,
                                             MultiTileCanvas canvas) {
-        Vec3d rayEnd = origin.add(dir.multiply(MAX_RANGE));
-        BlockHitResult hit = player.getWorld().raycast(new RaycastContext(
+        Vec3 rayEnd = origin.add(dir.scale(MAX_RANGE));
+        BlockHitResult hit = player.level().clip(new ClipContext(
                 origin,
                 rayEnd,
-                RaycastContext.ShapeType.VISUAL,
-                RaycastContext.FluidHandling.NONE,
+                ClipContext.Block.VISUAL,
+                ClipContext.Fluid.NONE,
                 player
         ));
 
         if (hit.getType() != HitResult.Type.BLOCK) return;
 
-        Vec3d visiblePoint = hit.getPos();
+        Vec3 visiblePoint = hit.getLocation();
         TileGrid.TileEntry owner =
                 grid.findTileContaining(canvas, visiblePoint.x, visiblePoint.z);
         if (owner == null) return;
@@ -143,14 +143,14 @@ public class ExplorationEngine {
         owner.entry().discover(localCol, localRow);
     }
 
-    private static Vec3d directionFromAngles(float yawDeg, float pitchDeg) {
-        float yaw   = yawDeg   * MathHelper.RADIANS_PER_DEGREE;
-        float pitch = pitchDeg * MathHelper.RADIANS_PER_DEGREE;
-        float cosP  = MathHelper.cos(-pitch);
-        return new Vec3d(
-                -MathHelper.sin(yaw) * cosP,
-                 MathHelper.sin(-pitch),
-                  MathHelper.cos(yaw) * cosP
+    private static Vec3 directionFromAngles(float yawDeg, float pitchDeg) {
+        float yaw   = yawDeg   * Mth.DEG_TO_RAD;
+        float pitch = pitchDeg * Mth.DEG_TO_RAD;
+        float cosP  = Mth.cos(-pitch);
+        return new Vec3(
+                -Mth.sin(yaw) * cosP,
+                 Mth.sin(-pitch),
+                  Mth.cos(yaw) * cosP
         );
     }
 }

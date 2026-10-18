@@ -3,12 +3,12 @@ package com.explorermap.api;
 import com.explorermap.registry.ExplorerMapRegistry;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.biome.Biome;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.core.Holder;
+import net.minecraft.resources.Identifier;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.biome.Biome;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -19,8 +19,8 @@ public final class ExplorerMapApi {
 
     @FunctionalInterface
     public interface BiomeColorProvider {
-        OptionalInt color(ClientWorld world, BlockPos samplePos,
-                          RegistryEntry<Biome> biome, int vanillaColor);
+        OptionalInt color(ClientLevel world, BlockPos samplePos,
+                          Holder<Biome> biome, int vanillaColor);
     }
 
     private static final Map<Identifier, BiomeColorProvider> BIOME_COLORS = new HashMap<>();
@@ -44,10 +44,10 @@ public final class ExplorerMapApi {
         return generation;
     }
 
-    public static int colorFor(ClientWorld world, BlockPos samplePos, int vanillaColor) {
-        var biomes = world.getRegistryManager().get(RegistryKeys.BIOME);
-        RegistryEntry<Biome> biome = world.getBiome(samplePos);
-        Identifier biomeId = biomes.getKey(biome.value()).map(key -> key.getValue()).orElse(null);
+    public static int colorFor(ClientLevel world, BlockPos samplePos, int vanillaColor) {
+        var biomes = world.registryAccess().lookupOrThrow(Registries.BIOME);
+        Holder<Biome> biome = world.getBiome(samplePos);
+        Identifier biomeId = biomes.getKey(biome.value());
         if (biomeId == null) return vanillaColor;
 
         BiomeColorProvider provider = BIOME_COLORS.get(biomeId);

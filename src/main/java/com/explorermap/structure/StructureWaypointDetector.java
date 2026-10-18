@@ -6,15 +6,17 @@ import com.explorermap.data.MapEntryData;
 import com.explorermap.data.MapIdentity;
 import com.explorermap.network.SyncWaypointsPayload;
 import com.explorermap.waypoint.Waypoint;
-import net.minecraft.item.map.MapState;
-import net.minecraft.registry.RegistryKeys;
+import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.structure.StructureStart;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.world.gen.structure.Structure;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.levelgen.structure.StructureStart;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
+
+import net.minecraft.world.level.levelgen.structure.Structure;
 
 import java.util.HashSet;
 import java.util.Map;
@@ -27,13 +29,22 @@ public final class StructureWaypointDetector {
 
     private StructureWaypointDetector() {}
 
+    // Same packing vanilla uses for chunk positions, so keys already stored in saves stay valid.
+    private static long packChunk(int x, int z) {
+        return ((long) x & 0xFFFFFFFFL) | (((long) z & 0xFFFFFFFFL) << 32);
+    }
+
+    private static int chunkX(long key) { return (int) key; }
+
+    private static int chunkZ(long key) { return (int) (key >>> 32); }
+
     public static void checkAndPlace(MinecraftServer server,
-                                      ServerPlayerEntity player,
+                                      ServerPlayer player,
                                       MapIdentity mapId,
-                                      MapState mapState,
+                                      MapItemSavedData mapState,
                                       ExplorerMapSavedData savedData,
                                       Set<Integer> newlyDiscoveredBits) {
-        ServerWorld world = server.getWorld(mapState.dimension);
+        ServerLevel world = server.getLevel(mapState.dimension);
         if (world == null) return;
 
         int scale      = 1 << mapState.scale;
@@ -53,7 +64,7 @@ public final class StructureWaypointDetector {
             int col = bit % 128, row = bit / 128;
             int wx = minX + col * scale + scale / 2;
             int wz = minZ + row * scale + scale / 2;
-            chunksToScan.add(new ChunkPos(new BlockPos(wx, 64, wz)).toLong());
+            chunksToScan.add(packChunk(wx >> 4, wz >> 4));
         }
 
         if (chunksToScan.isEmpty()) return;
@@ -61,12 +72,12 @@ public final class StructureWaypointDetector {
         boolean placedAny = false;
 
         for (long chunkKey : chunksToScan) {
-            ChunkPos chunkPos = new ChunkPos(chunkKey);
-            if (!world.isChunkLoaded(chunkPos.x, chunkPos.z)) {
+            int chunkX = chunkX(chunkKey), chunkZ = chunkZ(chunkKey);
+            if (!world.hasChunk(chunkX, chunkZ)) {
                 entry.addPendingStructureChunk(chunkKey);
                 continue;
             }
-            placedAny |= scanChunkForStructures(world, entry, savedData, mapId, chunkPos, bitmask, minX, minZ, scale);
+            placedAny |= scanChunkForStructures(world, entry, savedData, mapId, chunkX, chunkZ, bitmask, minX, minZ, scale);
         }
 
         if (placedAny) {
@@ -76,9 +87,9 @@ public final class StructureWaypointDetector {
 
     public static void retryPending(MinecraftServer server,
                                      MapIdentity mapId,
-                                     MapState mapState,
+                                     MapItemSavedData mapState,
                                      ExplorerMapSavedData savedData) {
-        ServerWorld world = server.getWorld(mapState.dimension);
+        ServerLevel world = server.getLevel(mapState.dimension);
         if (world == null) return;
 
         MapEntryData entry = savedData.getOrCreate(mapId);
@@ -93,11 +104,11 @@ public final class StructureWaypointDetector {
 
         boolean placedAny = false;
         for (long chunkKey : pending) {
-            ChunkPos chunkPos = new ChunkPos(chunkKey);
-            if (!world.isChunkLoaded(chunkPos.x, chunkPos.z)) continue;
+            int chunkX = chunkX(chunkKey), chunkZ = chunkZ(chunkKey);
+            if (!world.hasChunk(chunkX, chunkZ)) continue;
 
             entry.removePendingStructureChunk(chunkKey);
-            placedAny |= scanChunkForStructures(world, entry, savedData, mapId, chunkPos, bitmask, minX, minZ, scale);
+            placedAny |= scanChunkForStructures(world, entry, savedData, mapId, chunkX, chunkZ, bitmask, minX, minZ, scale);
         }
 
         if (placedAny) {
@@ -105,23 +116,23 @@ public final class StructureWaypointDetector {
         }
     }
 
-    private static boolean scanChunkForStructures(ServerWorld world, MapEntryData entry, ExplorerMapSavedData savedData,
-                                                    MapIdentity mapId, ChunkPos chunkPos, byte[] bitmask,
+    private static boolean scanChunkForStructures(ServerLevel world, MapEntryData entry, ExplorerMapSavedData savedData,
+                                                    MapIdentity mapId, int chunkX, int chunkZ, byte[] bitmask,
                                                     int minX, int minZ, int scale) {
-        var chunk = world.getChunk(chunkPos.x, chunkPos.z);
-        Map<Structure, StructureStart> starts = chunk.getStructureStarts();
+        var chunk = world.getChunk(chunkX, chunkZ);
+        Map<Structure, StructureStart> starts = chunk.getAllStarts();
         if (starts.isEmpty()) return false;
 
         boolean placedAny = false;
 
         for (Map.Entry<Structure, StructureStart> se : starts.entrySet()) {
             StructureStart start = se.getValue();
-            if (!start.hasChildren()) continue;
+            if (!start.isValid()) continue;
             if (!structureOverlapsDiscovered(start, bitmask, minX, minZ, scale)) continue;
 
-            var bb = start.getBoundingBox();
-            double structX = (bb.getMinX() + bb.getMaxX()) / 2.0;
-            double structZ = (bb.getMinZ() + bb.getMaxZ()) / 2.0;
+            BoundingBox bb = start.getBoundingBox();
+            double structX = (bb.minX() + bb.maxX()) / 2.0;
+            double structZ = (bb.minZ() + bb.maxZ()) / 2.0;
 
             if (hasDuplicateWaypoint(entry, structX, structZ)) continue;
 
@@ -155,11 +166,11 @@ public final class StructureWaypointDetector {
 
     private static boolean structureOverlapsDiscovered(StructureStart start, byte[] bitmask,
                                                          int minX, int minZ, int scale) {
-        var bb = start.getBoundingBox();
-        int colMin = Math.floorDiv(bb.getMinX() - minX, scale);
-        int colMax = Math.floorDiv(bb.getMaxX() - minX, scale);
-        int rowMin = Math.floorDiv(bb.getMinZ() - minZ, scale);
-        int rowMax = Math.floorDiv(bb.getMaxZ() - minZ, scale);
+        BoundingBox bb = start.getBoundingBox();
+        int colMin = Math.floorDiv(bb.minX() - minX, scale);
+        int colMax = Math.floorDiv(bb.maxX() - minX, scale);
+        int rowMin = Math.floorDiv(bb.minZ() - minZ, scale);
+        int rowMax = Math.floorDiv(bb.maxZ() - minZ, scale);
 
         colMin = Math.max(0, colMin);
         colMax = Math.min(127, colMax);
@@ -200,7 +211,7 @@ public final class StructureWaypointDetector {
         return candidate;
     }
 
-    private static String iconForStructure(ServerWorld world, Structure structure) {
+    private static String iconForStructure(ServerLevel world, Structure structure) {
         String type = structureTypeName(world, structure);
         return switch (type) {
             case "village" -> "explorermap:village";
@@ -211,7 +222,7 @@ public final class StructureWaypointDetector {
         };
     }
 
-    private static String nameForStructure(ServerWorld world, Structure structure) {
+    private static String nameForStructure(ServerLevel world, Structure structure) {
         String type = structureTypeName(world, structure);
         String[] parts = type.split("_");
         StringBuilder sb = new StringBuilder();
@@ -224,7 +235,7 @@ public final class StructureWaypointDetector {
         return sb.isEmpty() ? "Structure" : sb.toString();
     }
 
-    private static int colorForStructure(ServerWorld world, Structure structure) {
+    private static int colorForStructure(ServerLevel world, Structure structure) {
         String type = structureTypeName(world, structure);
         return switch (type) {
             case "village" -> 0xFFFFFF55;
@@ -236,9 +247,9 @@ public final class StructureWaypointDetector {
         };
     }
 
-    private static String structureTypeName(ServerWorld world, Structure structure) {
-        var registry = world.getRegistryManager().get(RegistryKeys.STRUCTURE);
-        var key = registry.getKey(structure);
-        return key.map(k -> k.getValue().getPath()).orElse("unknown");
+    private static String structureTypeName(ServerLevel world, Structure structure) {
+        var registry = world.registryAccess().lookupOrThrow(Registries.STRUCTURE);
+        Identifier key = registry.getKey(structure);
+        return key == null ? "unknown" : key.getPath();
     }
 }

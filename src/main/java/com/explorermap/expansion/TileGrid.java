@@ -4,9 +4,9 @@ import com.explorermap.data.ClientMapCache;
 import com.explorermap.data.MapEntryData;
 import com.explorermap.data.MapIdentity;
 import com.explorermap.ExplorerMapMod;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.component.type.MapIdComponent;
-import net.minecraft.item.map.MapState;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.world.level.saveddata.maps.MapId;
+import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -21,7 +21,7 @@ public final class TileGrid {
 
     public record TileEntry(
             MapIdentity mapId,
-            MapState state,
+            MapItemSavedData state,
             MapEntryData entry,
             int gridX,
             int gridZ
@@ -66,7 +66,7 @@ public final class TileGrid {
         return null;
     }
 
-    public static TileGrid build(MapIdentity rootMapId, MapState rootState, MapEntryData rootEntry, ClientWorld world) {
+    public static TileGrid build(MapIdentity rootMapId, MapItemSavedData rootState, MapEntryData rootEntry, ClientLevel world) {
         TileGrid grid = new TileGrid();
         grid.tiles.add(new TileEntry(rootMapId, rootState, rootEntry, 0, 0));
 
@@ -84,14 +84,14 @@ public final class TileGrid {
                 if (!visited.add(target)) continue;
                 if (grid.tiles.size() >= MAX_TILES) break;
 
-                if (!target.dimension().equals(world.getRegistryKey())) {
+                if (!target.dimension().equals(world.dimension())) {
                     ExplorerMapMod.LOGGER.warn(
                             "[ExplorerMap] Skipping expansion to {} - it isn't in the current dimension {}",
-                            target.asKey(), world.getRegistryKey().getValue());
+                            target.asKey(), world.dimension().identifier());
                     continue;
                 }
 
-                MapState adjState = world.getMapState(new MapIdComponent(target.mapId()));
+                MapItemSavedData adjState = world.getMapData(new MapId(target.mapId()));
                 if (adjState == null) continue;
 
                 int gx = current.gridX(), gz = current.gridZ();

@@ -6,39 +6,39 @@ import com.explorermap.data.MapIdentity;
 import com.explorermap.registry.ExplorerMapRegistry;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Hand;
-import net.minecraft.util.Uuids;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.core.UUIDUtil;
 
 import java.util.UUID;
 
-public record DeleteWaypointPayload(MapIdentity mapId, UUID waypointId) implements CustomPayload {
+public record DeleteWaypointPayload(MapIdentity mapId, UUID waypointId) implements CustomPacketPayload {
 
-    public static final CustomPayload.Id<DeleteWaypointPayload> ID =
-            new CustomPayload.Id<>(ExplorerMapRegistry.id("delete_waypoint"));
+    public static final CustomPacketPayload.Type<DeleteWaypointPayload> TYPE =
+            new CustomPacketPayload.Type<>(ExplorerMapRegistry.id("delete_waypoint"));
 
-    public static final PacketCodec<PacketByteBuf, DeleteWaypointPayload> CODEC =
-            PacketCodec.tuple(
+    public static final StreamCodec<FriendlyByteBuf, DeleteWaypointPayload> CODEC =
+            StreamCodec.composite(
                     MapIdentity.PACKET_CODEC,   DeleteWaypointPayload::mapId,
-                    Uuids.PACKET_CODEC,         DeleteWaypointPayload::waypointId,
+                    UUIDUtil.STREAM_CODEC,         DeleteWaypointPayload::waypointId,
                     DeleteWaypointPayload::new
             );
 
     @Override
-    public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() { return TYPE; }
 
     public static void register() {
-        PayloadTypeRegistry.playC2S().register(ID, CODEC);
-        ServerPlayNetworking.registerGlobalReceiver(ID, (payload, context) ->
+        PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) ->
                 context.server().execute(() -> handleOnServer(context.player(), payload)));
     }
 
-    private static void handleOnServer(ServerPlayerEntity player, DeleteWaypointPayload payload) {
-        var offHand = player.getStackInHand(Hand.OFF_HAND);
+    private static void handleOnServer(ServerPlayer player, DeleteWaypointPayload payload) {
+        var offHand = player.getItemInHand(InteractionHand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) {
             ExplorerMapMod.LOGGER.warn(
                     "[ExplorerMap] DeleteWaypoint: rejected from {} - no map in off-hand",
@@ -46,11 +46,11 @@ public record DeleteWaypointPayload(MapIdentity mapId, UUID waypointId) implemen
             return;
         }
 
-        MapIdentity heldRoot = MapIdentity.ofStack(offHand, player.getServerWorld());
-        var savedData = ExplorerMapSavedData.get(player.getServer());
+        MapIdentity heldRoot = MapIdentity.ofStack(offHand, player.level());
+        var savedData = ExplorerMapSavedData.get(player.level().getServer());
 
         var mapState = MapIdentity.resolveAuthorized(
-                player.getServer(), savedData, heldRoot, payload.mapId());
+                player.level().getServer(), savedData, heldRoot, payload.mapId());
         if (mapState == null) {
             ExplorerMapMod.LOGGER.warn(
                     "[ExplorerMap] DeleteWaypoint: rejected from {} - map {} is invalid or not accessible from the held map",
@@ -58,7 +58,7 @@ public record DeleteWaypointPayload(MapIdentity mapId, UUID waypointId) implemen
             return;
         }
 
-        if (!savedData.canManageWaypoint(payload.mapId(), payload.waypointId(), player.getUuid())) {
+        if (!savedData.canManageWaypoint(payload.mapId(), payload.waypointId(), player.getUUID())) {
             ExplorerMapMod.LOGGER.warn(
                     "[ExplorerMap] DeleteWaypoint: {} tried to delete a waypoint they do not own",
                     player.getName().getString());
@@ -70,6 +70,6 @@ public record DeleteWaypointPayload(MapIdentity mapId, UUID waypointId) implemen
         ExplorerMapMod.LOGGER.debug("[ExplorerMap] Deleted waypoint {} from map {}",
                 payload.waypointId(), payload.mapId().asKey());
 
-        SyncWaypointsPayload.broadcastTo(player.getServer(), payload.mapId());
+        SyncWaypointsPayload.broadcastTo(player.level().getServer(), payload.mapId());
     }
 }

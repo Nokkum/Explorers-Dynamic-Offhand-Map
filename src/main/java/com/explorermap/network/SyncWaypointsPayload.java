@@ -10,13 +10,13 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Hand;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,40 +26,40 @@ public record SyncWaypointsPayload(
         List<Waypoint> waypoints,
         int waypointCapacity,
         int waypointShareCharges
-) implements CustomPayload {
+) implements CustomPacketPayload {
 
     private static final int MAX_WAYPOINTS = 512;
 
-    public static final CustomPayload.Id<SyncWaypointsPayload> ID =
-            new CustomPayload.Id<>(ExplorerMapRegistry.id("sync_waypoints"));
+    public static final CustomPacketPayload.Type<SyncWaypointsPayload> TYPE =
+            new CustomPacketPayload.Type<>(ExplorerMapRegistry.id("sync_waypoints"));
 
-    public static final PacketCodec<PacketByteBuf, SyncWaypointsPayload> CODEC =
-            PacketCodec.tuple(
+    public static final StreamCodec<FriendlyByteBuf, SyncWaypointsPayload> CODEC =
+            StreamCodec.composite(
                     MapIdentity.PACKET_CODEC,
                     SyncWaypointsPayload::mapId,
-                    PacketCodecs.collection(ArrayList::new, Waypoint.PACKET_CODEC),
+                    ByteBufCodecs.collection(ArrayList::new, Waypoint.PACKET_CODEC),
                     SyncWaypointsPayload::waypoints,
-                    PacketCodecs.VAR_INT, SyncWaypointsPayload::waypointCapacity,
-                    PacketCodecs.VAR_INT, SyncWaypointsPayload::waypointShareCharges,
+                    ByteBufCodecs.VAR_INT, SyncWaypointsPayload::waypointCapacity,
+                    ByteBufCodecs.VAR_INT, SyncWaypointsPayload::waypointShareCharges,
                     SyncWaypointsPayload::new
             );
 
     @Override
-    public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() { return TYPE; }
 
-    public static void sendTo(ServerPlayerEntity player, MapIdentity mapId) {
-        var savedData = ExplorerMapSavedData.get(player.getServer());
-        List<Waypoint> waypoints = savedData.visibleWaypoints(mapId, player.getUuid());
+    public static void sendTo(ServerPlayer player, MapIdentity mapId) {
+        var savedData = ExplorerMapSavedData.get(player.level().getServer());
+        List<Waypoint> waypoints = savedData.visibleWaypoints(mapId, player.getUUID());
         var entry = savedData.getOrCreate(mapId);
         ServerPlayNetworking.send(player, new SyncWaypointsPayload(
                 mapId, waypoints, entry.getWaypointCapacity(), entry.getWaypointShareCharges()));
     }
 
     public static void broadcastTo(MinecraftServer server, MapIdentity mapId) {
-        for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
-            var offHand = p.getStackInHand(Hand.OFF_HAND);
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            var offHand = p.getItemInHand(InteractionHand.OFF_HAND);
             if (!ExplorerMapMod.isFilledMap(offHand)) continue;
-            if (mapId.equals(MapIdentity.ofStack(offHand, p.getServerWorld()))) {
+            if (mapId.equals(MapIdentity.ofStack(offHand, p.level()))) {
                 sendTo(p, mapId);
             }
         }
@@ -67,7 +67,7 @@ public record SyncWaypointsPayload(
 
     @Environment(EnvType.CLIENT)
     public static void registerClient() {
-        ClientPlayNetworking.registerGlobalReceiver(ID, (payload, context) ->
+        ClientPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) ->
                 context.client().execute(() -> handleOnClient(payload)));
     }
 

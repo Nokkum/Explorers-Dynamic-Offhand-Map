@@ -7,39 +7,39 @@ import com.explorermap.registry.ExplorerMapRegistry;
 import com.explorermap.waypoint.Waypoint;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Hand;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 
 import java.util.UUID;
 
-public record SaveWaypointPayload(MapIdentity mapId, Waypoint waypoint) implements CustomPayload {
+public record SaveWaypointPayload(MapIdentity mapId, Waypoint waypoint) implements CustomPacketPayload {
 
     private static final int MAX_NAME_LENGTH = 64;
 
-    public static final CustomPayload.Id<SaveWaypointPayload> ID =
-            new CustomPayload.Id<>(ExplorerMapRegistry.id("save_waypoint"));
+    public static final CustomPacketPayload.Type<SaveWaypointPayload> TYPE =
+            new CustomPacketPayload.Type<>(ExplorerMapRegistry.id("save_waypoint"));
 
-    public static final PacketCodec<PacketByteBuf, SaveWaypointPayload> CODEC =
-            PacketCodec.tuple(
+    public static final StreamCodec<FriendlyByteBuf, SaveWaypointPayload> CODEC =
+            StreamCodec.composite(
                     MapIdentity.PACKET_CODEC,           SaveWaypointPayload::mapId,
                     Waypoint.PACKET_CODEC,               SaveWaypointPayload::waypoint,
                     SaveWaypointPayload::new
             );
 
     @Override
-    public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() { return TYPE; }
 
     public static void register() {
-        PayloadTypeRegistry.playC2S().register(ID, CODEC);
-        ServerPlayNetworking.registerGlobalReceiver(ID, (payload, context) ->
+        PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) ->
                 context.server().execute(() -> handleOnServer(context.player(), payload)));
     }
 
-    private static void handleOnServer(ServerPlayerEntity player, SaveWaypointPayload payload) {
-        var offHand = player.getStackInHand(Hand.OFF_HAND);
+    private static void handleOnServer(ServerPlayer player, SaveWaypointPayload payload) {
+        var offHand = player.getItemInHand(InteractionHand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) {
             ExplorerMapMod.LOGGER.warn(
                     "[ExplorerMap] SaveWaypoint: rejected from {} - no map in off-hand",
@@ -47,11 +47,11 @@ public record SaveWaypointPayload(MapIdentity mapId, Waypoint waypoint) implemen
             return;
         }
 
-        MapIdentity heldRoot = MapIdentity.ofStack(offHand, player.getServerWorld());
-        var savedData = ExplorerMapSavedData.get(player.getServer());
+        MapIdentity heldRoot = MapIdentity.ofStack(offHand, player.level());
+        var savedData = ExplorerMapSavedData.get(player.level().getServer());
 
         var mapState = MapIdentity.resolveAuthorized(
-                player.getServer(), savedData, heldRoot, payload.mapId());
+                player.level().getServer(), savedData, heldRoot, payload.mapId());
         if (mapState == null) {
             ExplorerMapMod.LOGGER.warn(
                     "[ExplorerMap] SaveWaypoint: rejected from {} - map {} is invalid or not accessible from the held map",
@@ -97,11 +97,11 @@ public record SaveWaypointPayload(MapIdentity mapId, Waypoint waypoint) implemen
         }
 
         var entry = savedData.getOrCreate(payload.mapId());
-        String playerUuid = player.getUuid().toString();
+        String playerUuid = player.getUUID().toString();
         Waypoint previous = entry.findWaypoint(incomingId);
 
         boolean editing = previous != null;
-        if (editing && !previous.isOwnedBy(player.getUuid())) {
+        if (editing && !previous.isOwnedBy(player.getUUID())) {
             ExplorerMapMod.LOGGER.warn(
                     "[ExplorerMap] SaveWaypoint: {} tried to edit a waypoint they do not own",
                     player.getName().getString());
@@ -110,7 +110,7 @@ public record SaveWaypointPayload(MapIdentity mapId, Waypoint waypoint) implemen
 
         int waypointCapacity = entry.getWaypointCapacity();
         long ownedWaypointCount = entry.getWaypoints().stream()
-                .filter(wp -> wp.isOwnedBy(player.getUuid()))
+                .filter(wp -> wp.isOwnedBy(player.getUUID()))
                 .count();
         if (!editing && ownedWaypointCount >= waypointCapacity) {
             ExplorerMapMod.LOGGER.warn(
@@ -129,6 +129,6 @@ public record SaveWaypointPayload(MapIdentity mapId, Waypoint waypoint) implemen
         ExplorerMapMod.LOGGER.debug("[ExplorerMap] Saved waypoint '{}' on map {}",
                 sanitized.name(), payload.mapId().asKey());
 
-        SyncWaypointsPayload.broadcastTo(player.getServer(), payload.mapId());
+        SyncWaypointsPayload.broadcastTo(player.level().getServer(), payload.mapId());
     }
 }

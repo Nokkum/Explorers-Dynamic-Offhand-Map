@@ -2,6 +2,7 @@
   "modmenu.nameTranslation.explorermap": "Explorer's Dynamic Off-Hand Map",
   "modmenu.descriptionTranslation.explorermap": "Camera-based fog-of-discovery mini-map HUD. Hold a filled map in your off-hand to reveal the world as you look at it.",
   "key.categories.explorermap": "Explorer Map",
+  "key.category.explorermap.main": "Explorer Map",
   "key.explorermap.open_map": "Open Full Map",
   "screen.explorermap.full_map": "Explorer Map",
   "screen.explorermap.cartography_table": "Explorer Cartography",

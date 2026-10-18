@@ -9,13 +9,13 @@ import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.server.level.ServerPlayer;
 
 public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason reason)
-        implements CustomPayload {
+        implements CustomPacketPayload {
 
     public enum Reason {
         MISSING_PAPER,
@@ -24,10 +24,10 @@ public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason
         NO_MAP_IN_OFFHAND,
         CYCLE_DETECTED;
 
-        static final PacketCodec<PacketByteBuf, Reason> PACKET_CODEC = PacketCodec.of(
-                (Reason value, PacketByteBuf buf) -> buf.writeString(value.name()),
-                (PacketByteBuf buf) -> {
-                    String raw = buf.readString();
+        static final StreamCodec<FriendlyByteBuf, Reason> PACKET_CODEC = StreamCodec.ofMember(
+                (Reason value, FriendlyByteBuf buf) -> buf.writeUtf(value.name()),
+                (FriendlyByteBuf buf) -> {
+                    String raw = buf.readUtf();
                     try {
                         return Reason.valueOf(raw);
                     } catch (IllegalArgumentException e) {
@@ -37,30 +37,30 @@ public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason
         );
     }
 
-    public static final CustomPayload.Id<ExpansionFailedPayload> ID =
-            new CustomPayload.Id<>(ExplorerMapRegistry.id("expansion_failed"));
+    public static final CustomPacketPayload.Type<ExpansionFailedPayload> TYPE =
+            new CustomPacketPayload.Type<>(ExplorerMapRegistry.id("expansion_failed"));
 
-    public static final PacketCodec<PacketByteBuf, ExpansionFailedPayload> CODEC =
-            PacketCodec.tuple(
+    public static final StreamCodec<FriendlyByteBuf, ExpansionFailedPayload> CODEC =
+            StreamCodec.composite(
                     ExpansionRecord.Direction.PACKET_CODEC, ExpansionFailedPayload::direction,
                     Reason.PACKET_CODEC, ExpansionFailedPayload::reason,
                     ExpansionFailedPayload::new
             );
 
     @Override
-    public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() { return TYPE; }
 
     public static void registerCommon() {
-        PayloadTypeRegistry.playS2C().register(ID, CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(TYPE, CODEC);
     }
 
     @Environment(EnvType.CLIENT)
     public static void registerClient() {
-        ClientPlayNetworking.registerGlobalReceiver(ID, (payload, ctx) ->
+        ClientPlayNetworking.registerGlobalReceiver(TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> handleOnClient(payload)));
     }
 
-    public static void sendTo(ServerPlayerEntity player, ExpansionRecord.Direction dir, Reason reason) {
+    public static void sendTo(ServerPlayer player, ExpansionRecord.Direction dir, Reason reason) {
         ServerPlayNetworking.send(player, new ExpansionFailedPayload(dir, reason));
     }
 

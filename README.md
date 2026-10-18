@@ -9,23 +9,3 @@ The Explorer's Dynamic Offhand Map Mod is inspired by Minimap Mods  such as [Xae
 
 ## [**License**](https://github.com/Nokkum/Explorers-Dynamic-Offhand-Map?tab=Apache-2.0-1-ov-file)
 The Explorer's Dynamic Offhand Map is Licensed under the [Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0)
-
-<details>
-<summary>Optional</summary>
-
-<details>
-<summary> **Diagrams** </summary>
-
-### **Component and Data Flow**
-<details>
-<summary>Photo</summary>
-
-<img src=".github/resources/png/diagram-2.png" alt="Alt text" width="400">
-</details>
-
-> Detailed component and data-flow diagram showing client/server interactions, network synchronization, map state, and rendering.
-
-> for more diagrams, infer by clicking [this](https://github.com/Nokkum/Explorers-Dynamic-Offhand-Map/tree/main/.github/resources/png).
-</details>
-
-</details>

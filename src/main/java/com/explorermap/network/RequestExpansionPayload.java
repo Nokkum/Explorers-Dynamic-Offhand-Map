@@ -8,59 +8,59 @@ import com.explorermap.expansion.ExpansionRecord;
 import com.explorermap.registry.ExplorerMapRegistry;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.Item;
-import net.minecraft.item.Items;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.Hand;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.InteractionHand;
 
 public record RequestExpansionPayload(
         ExpansionRecord.Direction direction,
         boolean highDetail
-) implements CustomPayload {
+) implements CustomPacketPayload {
 
-    public static final CustomPayload.Id<RequestExpansionPayload> ID =
-            new CustomPayload.Id<>(ExplorerMapRegistry.id("request_expansion"));
+    public static final CustomPacketPayload.Type<RequestExpansionPayload> TYPE =
+            new CustomPacketPayload.Type<>(ExplorerMapRegistry.id("request_expansion"));
 
-    public static final PacketCodec<PacketByteBuf, RequestExpansionPayload> CODEC =
-            PacketCodec.tuple(
+    public static final StreamCodec<FriendlyByteBuf, RequestExpansionPayload> CODEC =
+            StreamCodec.composite(
                     ExpansionRecord.Direction.PACKET_CODEC, RequestExpansionPayload::direction,
-                    PacketCodecs.BOOL, RequestExpansionPayload::highDetail,
+                    ByteBufCodecs.BOOL, RequestExpansionPayload::highDetail,
                     RequestExpansionPayload::new
             );
 
     @Override
-    public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() { return TYPE; }
 
     public static void register() {
-        PayloadTypeRegistry.playC2S().register(ID, CODEC);
-        ServerPlayNetworking.registerGlobalReceiver(ID, (payload, context) -> {
-            ServerPlayerEntity player = context.player();
+        PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) -> {
+            ServerPlayer player = context.player();
             context.server().execute(() -> handleOnServer(player, payload));
         });
     }
 
-    private static void handleOnServer(ServerPlayerEntity player, RequestExpansionPayload payload) {
-        var offHand = player.getStackInHand(Hand.OFF_HAND);
+    private static void handleOnServer(ServerPlayer player, RequestExpansionPayload payload) {
+        var offHand = player.getItemInHand(InteractionHand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) {
             ExpansionFailedPayload.sendTo(player, payload.direction(),
                     ExpansionFailedPayload.Reason.NO_MAP_IN_OFFHAND);
             return;
         }
 
-        var mapState = MapIdentity.stateOf(offHand, player.getServerWorld());
+        var mapState = MapIdentity.stateOf(offHand, player.level());
         if (mapState == null) {
             ExpansionFailedPayload.sendTo(player, payload.direction(),
                     ExpansionFailedPayload.Reason.NO_MAP_IN_OFFHAND);
             return;
         }
 
-        ServerWorld mapWorld = player.getServer().getWorld(mapState.dimension);
+        ServerLevel mapWorld = player.level().getServer().getLevel(mapState.dimension);
         if (mapWorld == null) {
             ExpansionFailedPayload.sendTo(player, payload.direction(),
                     ExpansionFailedPayload.Reason.NO_MAP_IN_OFFHAND);
@@ -75,7 +75,7 @@ public record RequestExpansionPayload(
         }
         MapIdentity mapId = MapIdentity.of(mapState, rawMapId);
 
-        var savedData = ExplorerMapSavedData.get(player.getServer());
+        var savedData = ExplorerMapSavedData.get(player.level().getServer());
 
         if (savedData.getOrCreate(mapId).hasExpansion(payload.direction())) {
             ExpansionFailedPayload.sendTo(player, payload.direction(),
@@ -133,40 +133,39 @@ public record RequestExpansionPayload(
                 new GrantExpansionPayload(payload.direction(), mapId, newMapId, payload.highDetail()));
     }
 
-    private static ExpansionFailedPayload.Reason checkResources(ServerPlayerEntity player, boolean highDetail) {
+    private static ExpansionFailedPayload.Reason checkResources(ServerPlayer player, boolean highDetail) {
         if (player.isCreative()) return null;
 
         var inv  = player.getInventory();
         int cost = ExplorerMapConfig.get().expansionPaperCost;
 
         int paperHeld = 0;
-        for (int i = 0; i < inv.size(); i++) {
-            var slot = inv.getStack(i);
-            if (slot.isOf(Items.PAPER)) paperHeld += slot.getCount();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var slot = inv.getItem(i);
+            if (slot.is(Items.PAPER)) paperHeld += slot.getCount();
         }
         if (paperHeld < cost) return ExpansionFailedPayload.Reason.MISSING_PAPER;
 
         if (highDetail) {
-            if (!inv.contains(Items.INK_SAC.getDefaultStack())
-             || !inv.contains(Items.COMPASS.getDefaultStack())) {
+            if (!hasItem(inv, Items.INK_SAC) || !hasItem(inv, Items.COMPASS)) {
                 return ExpansionFailedPayload.Reason.MISSING_INK_OR_COMPASS;
             }
         }
         return null;
     }
 
-    private static void consumeResources(ServerPlayerEntity player, boolean highDetail) {
+    private static void consumeResources(ServerPlayer player, boolean highDetail) {
         if (player.isCreative()) return;
 
         var inv  = player.getInventory();
         int cost = ExplorerMapConfig.get().expansionPaperCost;
 
         int remaining = cost;
-        for (int i = 0; i < inv.size() && remaining > 0; i++) {
-            var slot = inv.getStack(i);
-            if (slot.isOf(Items.PAPER)) {
+        for (int i = 0; i < inv.getContainerSize() && remaining > 0; i++) {
+            var slot = inv.getItem(i);
+            if (slot.is(Items.PAPER)) {
                 int take = Math.min(remaining, slot.getCount());
-                slot.decrement(take);
+                slot.shrink(take);
                 remaining -= take;
             }
         }
@@ -177,10 +176,17 @@ public record RequestExpansionPayload(
         }
     }
 
-    private static void removeOne(PlayerInventory inv, Item item) {
-        for (int i = 0; i < inv.size(); i++) {
-            var slot = inv.getStack(i);
-            if (slot.isOf(item)) { slot.decrement(1); return; }
+    private static boolean hasItem(Inventory inv, Item item) {
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            if (inv.getItem(i).is(item)) return true;
+        }
+        return false;
+    }
+
+    private static void removeOne(Inventory inv, Item item) {
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var slot = inv.getItem(i);
+            if (slot.is(item)) { slot.shrink(1); return; }
         }
     }
 }

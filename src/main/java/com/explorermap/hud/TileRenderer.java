@@ -5,9 +5,10 @@ import com.explorermap.expansion.TileGrid;
 import com.explorermap.config.ExplorerMapConfig;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.util.Identifier;
-import net.minecraft.item.map.MapState;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
 @Environment(EnvType.CLIENT)
 public final class TileRenderer {
@@ -16,7 +17,7 @@ public final class TileRenderer {
 
     private TileRenderer() {}
 
-    public static void renderHud(DrawContext context, TileGrid grid, MapState rootState,
+    public static void renderHud(GuiGraphicsExtractor context, TileGrid grid, MapItemSavedData rootState,
                                   int hudBoxX, int hudBoxY, int hudSize,
                                   double playerX, double playerZ, float yawDeg) {
         MultiTileCanvas canvas = MultiTileCanvas.from(grid, rootState);
@@ -39,7 +40,7 @@ public final class TileRenderer {
         context.disableScissor();
     }
 
-    public static void renderFullMap(DrawContext context, TileGrid grid, MapState rootState,
+    public static void renderFullMap(GuiGraphicsExtractor context, TileGrid grid, MapItemSavedData rootState,
                                       int screenCentreX, int screenCentreY,
                                       float zoom, float panX, float panY,
                                       int clipX0, int clipY0, int clipX1, int clipY1,
@@ -63,7 +64,7 @@ public final class TileRenderer {
         context.disableScissor();
     }
 
-    private static void renderAllTiles(DrawContext context,
+    private static void renderAllTiles(GuiGraphicsExtractor context,
                                         TileGrid grid,
                                         MultiTileCanvas canvas,
                                         int originX, int originY,
@@ -81,7 +82,7 @@ public final class TileRenderer {
         }
     }
 
-    private static void renderGridLines(DrawContext context, TileGrid grid,
+    private static void renderGridLines(GuiGraphicsExtractor context, TileGrid grid,
                                         MultiTileCanvas canvas, int originX, int originY,
                                         float pixSize) {
         ExplorerMapConfig cfg = ExplorerMapConfig.get();
@@ -107,25 +108,26 @@ public final class TileRenderer {
         }
     }
 
-    private static void renderTilePixels(DrawContext context,
+    private static void renderTilePixels(GuiGraphicsExtractor context,
                                           TileGrid.TileEntry tile,
                                           int tileScreenX, int tileScreenY,
                                           float pixSize) {
         Identifier tex = TileTextureCache.getInstance()
                 .getOrUpdate(tile.mapId(), tile.state(), tile.entry());
 
-        var matrices = context.getMatrices();
-        matrices.push();
-        matrices.translate((float) tileScreenX, (float) tileScreenY, 0f);
+        // 1.21.6+ GUI uses a 2D Matrix3x2fStack and render pipelines instead of RenderLayers.
+        var pose = context.pose();
+        pose.pushMatrix();
+        pose.translate((float) tileScreenX, (float) tileScreenY);
         if (pixSize != 1f) {
-            matrices.scale(pixSize, pixSize, 1f);
+            pose.scale(pixSize, pixSize);
         }
 
-        context.drawTexture(tex, 0, 0, 0, 0, 128, 128, 128, 128);
-        matrices.pop();
+        context.blit(RenderPipelines.GUI_TEXTURED, tex, 0, 0, 0f, 0f, 128, 128, 128, 128);
+        pose.popMatrix();
     }
 
-    private static void renderFadedEdge(DrawContext context,
+    private static void renderFadedEdge(GuiGraphicsExtractor context,
                                          TileGrid grid,
                                          TileGrid.TileEntry tile,
                                          int tileScreenX, int tileScreenY,
@@ -151,7 +153,7 @@ public final class TileRenderer {
         if (missingE) drawFade(context, tx2,ty,  tx2, ty2, -1,0,  fadeW, tileSize);
     }
 
-    private static void drawFade(DrawContext ctx,
+    private static void drawFade(GuiGraphicsExtractor ctx,
                                    int x0, int y0, int x1, int y1,
                                    int dx, int dy,
                                    int fadeW, int edgeLen) {
@@ -174,7 +176,7 @@ public final class TileRenderer {
         }
     }
 
-    public static void drawRotatedArrow(DrawContext ctx, int cx, int cy,
+    public static void drawRotatedArrow(GuiGraphicsExtractor ctx, int cx, int cy,
                                          float yawDeg, int halfSize) {
         double angle = Math.toRadians(yawDeg + 180.0);
         double cos   =  Math.cos(angle);
@@ -224,7 +226,7 @@ public final class TileRenderer {
         }
     }
 
-    private static void rasteriseTri(DrawContext ctx, int[] xs, int[] ys, int color) {
+    private static void rasteriseTri(GuiGraphicsExtractor ctx, int[] xs, int[] ys, int color) {
         int minY = Math.min(ys[0], Math.min(ys[1], ys[2]));
         int maxY = Math.max(ys[0], Math.max(ys[1], ys[2]));
 

@@ -4,7 +4,7 @@ import com.explorermap.expansion.ExpansionRecord;
 import com.explorermap.network.ExpansionFailedPayload;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.text.Text;
+import net.minecraft.network.chat.Component;
 
 @Environment(EnvType.CLIENT)
 public final class ExpansionFeedback {
@@ -38,7 +38,7 @@ public final class ExpansionFeedback {
             case NO_MAP_IN_OFFHAND        -> "explorermap.expansion.fail.no_map";
             case CYCLE_DETECTED           -> "explorermap.expansion.fail.cycle_detected";
         };
-        return Text.translatable(key).getString();
+        return Component.translatable(key).getString();
     }
 
     public static void clear() {

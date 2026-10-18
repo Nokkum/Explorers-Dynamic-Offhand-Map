@@ -6,60 +6,60 @@ import com.explorermap.data.MapIdentity;
 import com.explorermap.registry.ExplorerMapRegistry;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.block.Blocks;
-import net.minecraft.item.Items;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.item.Items;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.core.BlockPos;
 
-public record InsertWaypointCapacityPayload(BlockPos tablePos) implements CustomPayload {
+public record InsertWaypointCapacityPayload(BlockPos tablePos) implements CustomPacketPayload {
 
-    public static final CustomPayload.Id<InsertWaypointCapacityPayload> ID =
-            new CustomPayload.Id<>(ExplorerMapRegistry.id("insert_waypoint_compass"));
+    public static final CustomPacketPayload.Type<InsertWaypointCapacityPayload> TYPE =
+            new CustomPacketPayload.Type<>(ExplorerMapRegistry.id("insert_waypoint_compass"));
 
-    public static final PacketCodec<PacketByteBuf, InsertWaypointCapacityPayload> CODEC =
-            PacketCodec.tuple(
-                    BlockPos.PACKET_CODEC, InsertWaypointCapacityPayload::tablePos,
+    public static final StreamCodec<FriendlyByteBuf, InsertWaypointCapacityPayload> CODEC =
+            StreamCodec.composite(
+                    BlockPos.STREAM_CODEC, InsertWaypointCapacityPayload::tablePos,
                     InsertWaypointCapacityPayload::new
             );
 
     @Override
-    public CustomPayload.Id<? extends CustomPayload> getId() {
-        return ID;
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
     public static void register() {
-        PayloadTypeRegistry.playC2S().register(ID, CODEC);
-        ServerPlayNetworking.registerGlobalReceiver(ID, (payload, context) ->
+        PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) ->
                 context.server().execute(() -> handleOnServer(context.player(), payload)));
     }
 
-    private static void handleOnServer(ServerPlayerEntity player,
+    private static void handleOnServer(ServerPlayer player,
                                        InsertWaypointCapacityPayload payload) {
-        if (!player.getServerWorld().getBlockState(payload.tablePos()).isOf(Blocks.CARTOGRAPHY_TABLE)
-                || player.squaredDistanceTo(payload.tablePos().toCenterPos()) > 64.0) {
+        if (!player.level().getBlockState(payload.tablePos()).is(Blocks.CARTOGRAPHY_TABLE)
+                || player.distanceToSqr(payload.tablePos().getCenter()) > 64.0) {
             return;
         }
 
-        var map = player.getStackInHand(Hand.OFF_HAND);
+        var map = player.getItemInHand(InteractionHand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(map)) return;
-        MapIdentity mapId = MapIdentity.ofStack(map, player.getServerWorld());
+        MapIdentity mapId = MapIdentity.ofStack(map, player.level());
         if (mapId == null) return;
 
         int compassSlot = -1;
-        for (int i = 0; i < player.getInventory().size(); i++) {
-            if (player.getInventory().getStack(i).isOf(Items.COMPASS)) {
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            if (player.getInventory().getItem(i).is(Items.COMPASS)) {
                 compassSlot = i;
                 break;
             }
         }
         if (compassSlot < 0) return;
 
-        player.getInventory().getStack(compassSlot).decrement(1);
-        ExplorerMapSavedData.get(player.getServer()).addWaypointCapacity(mapId);
+        player.getInventory().getItem(compassSlot).shrink(1);
+        ExplorerMapSavedData.get(player.level().getServer()).addWaypointCapacity(mapId);
         SyncWaypointsPayload.sendTo(player, mapId);
     }
 }

@@ -8,36 +8,36 @@ import com.explorermap.registry.ExplorerMapRegistry;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
 public record GrantExpansionPayload(
         ExpansionRecord.Direction direction,
         MapIdentity sourceMap,
         MapIdentity targetMap,
         boolean highDetail
-) implements CustomPayload {
+) implements CustomPacketPayload {
 
-    public static final CustomPayload.Id<GrantExpansionPayload> ID =
-            new CustomPayload.Id<>(ExplorerMapRegistry.id("grant_expansion"));
+    public static final CustomPacketPayload.Type<GrantExpansionPayload> TYPE =
+            new CustomPacketPayload.Type<>(ExplorerMapRegistry.id("grant_expansion"));
 
-    public static final PacketCodec<PacketByteBuf, GrantExpansionPayload> CODEC =
-            PacketCodec.tuple(
+    public static final StreamCodec<FriendlyByteBuf, GrantExpansionPayload> CODEC =
+            StreamCodec.composite(
                     ExpansionRecord.Direction.PACKET_CODEC, GrantExpansionPayload::direction,
                     MapIdentity.PACKET_CODEC, GrantExpansionPayload::sourceMap,
                     MapIdentity.PACKET_CODEC, GrantExpansionPayload::targetMap,
-                    PacketCodecs.BOOL,        GrantExpansionPayload::highDetail,
+                    ByteBufCodecs.BOOL,        GrantExpansionPayload::highDetail,
                     GrantExpansionPayload::new
             );
 
     @Override
-    public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() { return TYPE; }
 
     @Environment(EnvType.CLIENT)
     public static void registerClient() {
-        ClientPlayNetworking.registerGlobalReceiver(ID, (payload, context) ->
+        ClientPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) ->
                 context.client().execute(() -> handleOnClient(payload)));
     }
 

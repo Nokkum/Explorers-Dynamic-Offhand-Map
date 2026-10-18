@@ -4,10 +4,10 @@ import com.explorermap.registry.ExplorerMapRegistry;
 import com.explorermap.waypoint.Waypoint;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.util.Identifier;
-import net.minecraft.client.MinecraftClient;
-import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.resources.Identifier;
 
 @Environment(EnvType.CLIENT)
 public final class WaypointIconRenderer {
@@ -20,58 +20,55 @@ public final class WaypointIconRenderer {
 
     private WaypointIconRenderer() {}
 
-    public static void draw(DrawContext ctx, Waypoint waypoint, int cx, int cy, int size) {
+    public static void draw(GuiGraphicsExtractor ctx, Waypoint waypoint, int cx, int cy, int size) {
         Identifier texture = ExplorerMapRegistry.getWaypointTexture(waypoint.iconId());
         draw(ctx, texture, waypoint.color(), cx, cy, size);
     }
 
-    public static void draw(DrawContext ctx, Identifier texture, int tintARGB,
+    public static void draw(GuiGraphicsExtractor ctx, Identifier texture, int tintARGB,
                              int cx, int cy, int size) {
         int x = cx - size / 2;
         int y = cy - size / 2;
 
         ctx.fill(x - 1, y - 1, x + size + 1, y + size + 1, 0x88000000);
 
-        float r = ((tintARGB >> 16) & 0xFF) / 255f;
-        float g = ((tintARGB >>  8) & 0xFF) / 255f;
-        float b = ( tintARGB        & 0xFF) / 255f;
-        RenderSystem.setShaderColor(r, g, b, 1f);
+        // RenderSystem.setShaderColor() no longer exists; the tint is now an argument to blit().
+        int tint = 0xFF000000 | (tintARGB & 0x00FFFFFF);
 
-        var matrices = ctx.getMatrices();
-        matrices.push();
+        var pose = ctx.pose();
+        pose.pushMatrix();
         if (size != 16) {
             float sc = size / 16f;
-            matrices.translate((float) x, (float) y, 0f);
-            matrices.scale(sc, sc, 1f);
-            ctx.drawTexture(texture, 0, 0, 0, 0, 16, 16, 16, 16);
+            pose.translate((float) x, (float) y);
+            pose.scale(sc, sc);
+            ctx.blit(RenderPipelines.GUI_TEXTURED, texture, 0, 0, 0f, 0f, 16, 16, 16, 16, 16, 16, tint);
         } else {
-            ctx.drawTexture(texture, x, y, 0, 0, 16, 16, 16, 16);
+            ctx.blit(RenderPipelines.GUI_TEXTURED, texture, x, y, 0f, 0f, 16, 16, 16, 16, 16, 16, tint);
         }
-        matrices.pop();
-
-        RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+        pose.popMatrix();
     }
 
-    public static void drawOnMap(DrawContext ctx, Waypoint waypoint,
+    public static void drawOnMap(GuiGraphicsExtractor ctx, Waypoint waypoint,
                                   int sx, int sy, int iconSize, boolean showLabel) {
         draw(ctx, waypoint, sx, sy, iconSize);
 
         if (showLabel) {
-            var client = MinecraftClient.getInstance();
-            if (client.textRenderer != null) {
+            var client = Minecraft.getInstance();
+            if (client.font != null) {
                 int labelX = sx + iconSize / 2 + 2;
                 int labelY = sy - 4;
 
-                ctx.drawText(client.textRenderer, waypoint.name(),
+                ctx.text(client.font, waypoint.name(),
                         labelX + 1, labelY + 1, 0x88000000, false);
 
-                ctx.drawText(client.textRenderer, waypoint.name(),
-                        labelX, labelY, waypoint.color(), false);
+                // Alpha is now mandatory when drawing text (an alpha of 0 draws nothing).
+                ctx.text(client.font, waypoint.name(),
+                        labelX, labelY, 0xFF000000 | waypoint.color(), false);
             }
         }
     }
 
-    public static void drawPickerCell(DrawContext ctx, Identifier texture,
+    public static void drawPickerCell(GuiGraphicsExtractor ctx, Identifier texture,
                                        int tint, int x, int y,
                                        int cellSize, boolean selected) {
         if (selected) {

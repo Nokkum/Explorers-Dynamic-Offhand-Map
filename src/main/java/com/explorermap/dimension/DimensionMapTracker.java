@@ -2,30 +2,30 @@ package com.explorermap.dimension;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.map.MapState;
-import net.minecraft.text.Text;
-import net.minecraft.world.World;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.level.Level;
 
 @Environment(EnvType.CLIENT)
 public final class DimensionMapTracker {
 
     private DimensionMapTracker() {}
 
-    public static boolean isMapRelevantForCurrentDimension(ClientPlayerEntity player, MapState mapState) {
-        return mapState.dimension.equals(player.getWorld().getRegistryKey());
+    public static boolean isMapRelevantForCurrentDimension(LocalPlayer player, MapItemSavedData mapState) {
+        return mapState.dimension.equals(player.level().dimension());
     }
 
-    public static boolean isOverworld(ClientPlayerEntity player) {
-        return player.getWorld().getRegistryKey().equals(World.OVERWORLD);
+    public static boolean isOverworld(LocalPlayer player) {
+        return player.level().dimension().equals(Level.OVERWORLD);
     }
 
-    public static String dimensionLabel(ClientPlayerEntity player) {
-        var dim = player.getWorld().getRegistryKey();
-        if (dim.equals(World.OVERWORLD)) return Text.translatable("explorermap.dimension.overworld").getString();
-        if (dim.equals(World.NETHER))    return Text.translatable("explorermap.dimension.nether").getString();
-        if (dim.equals(World.END))       return Text.translatable("explorermap.dimension.end").getString();
-        String path = dim.getValue().getPath();
+    public static String dimensionLabel(LocalPlayer player) {
+        var dim = player.level().dimension();
+        if (dim.equals(Level.OVERWORLD)) return Component.translatable("explorermap.dimension.overworld").getString();
+        if (dim.equals(Level.NETHER))    return Component.translatable("explorermap.dimension.nether").getString();
+        if (dim.equals(Level.END))       return Component.translatable("explorermap.dimension.end").getString();
+        String path = dim.identifier().getPath();
         return Character.toUpperCase(path.charAt(0)) + path.substring(1).replace('_', ' ');
     }
 }

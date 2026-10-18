@@ -12,13 +12,13 @@ import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Hand;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -26,32 +26,32 @@ import java.util.Set;
 
 public final class SyncDiscoveryPayload {
 
-    public record Upload(MapIdentity mapId, byte[] bitmask) implements CustomPayload {
+    public record Upload(MapIdentity mapId, byte[] bitmask) implements CustomPacketPayload {
 
-        public static final CustomPayload.Id<Upload> ID =
-                new CustomPayload.Id<>(ExplorerMapRegistry.id("upload_discovery"));
+        public static final CustomPacketPayload.Type<Upload> TYPE =
+                new CustomPacketPayload.Type<>(ExplorerMapRegistry.id("upload_discovery"));
 
-        public static final PacketCodec<PacketByteBuf, Upload> CODEC =
-                PacketCodec.tuple(
+        public static final StreamCodec<FriendlyByteBuf, Upload> CODEC =
+                StreamCodec.composite(
                         MapIdentity.PACKET_CODEC, Upload::mapId,
-                        PacketCodecs.byteArray(MapEntryData.BYTE_COUNT), Upload::bitmask,
+                        ByteBufCodecs.byteArray(MapEntryData.BYTE_COUNT), Upload::bitmask,
                         Upload::new
                 );
 
-        @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+        @Override public CustomPacketPayload.Type<? extends CustomPacketPayload> type() { return TYPE; }
 
         public static void register() {
-            PayloadTypeRegistry.playC2S().register(ID, CODEC);
-            ServerPlayNetworking.registerGlobalReceiver(ID, (payload, ctx) ->
+            PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC);
+            ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, ctx) ->
                     ctx.server().execute(() -> handleOnServer(ctx.server(), ctx.player(), payload)));
         }
 
-        private static void handleOnServer(MinecraftServer server, ServerPlayerEntity sender, Upload payload) {
+        private static void handleOnServer(MinecraftServer server, ServerPlayer sender, Upload payload) {
 
-            var offHand = sender.getStackInHand(Hand.OFF_HAND);
+            var offHand = sender.getItemInHand(InteractionHand.OFF_HAND);
             if (!ExplorerMapMod.isFilledMap(offHand)) return;
 
-            MapIdentity heldRoot = MapIdentity.ofStack(offHand, sender.getServerWorld());
+            MapIdentity heldRoot = MapIdentity.ofStack(offHand, sender.level());
             var savedData = ExplorerMapSavedData.get(server);
 
             var mapState = MapIdentity.resolveAuthorized(server, savedData, heldRoot, payload.mapId());
@@ -63,7 +63,7 @@ public final class SyncDiscoveryPayload {
             }
 
             Set<Integer> newlyDiscovered = savedData.mergePlayerBitmask(
-                    payload.mapId(), sender.getUuid(), payload.bitmask());
+                    payload.mapId(), sender.getUUID(), payload.bitmask());
             if (newlyDiscovered.isEmpty()) return;
 
             ExplorerMapMod.LOGGER.debug("[ExplorerMap] Merged discovery for map {} from {}",
@@ -76,27 +76,27 @@ public final class SyncDiscoveryPayload {
         }
     }
 
-    public record Broadcast(MapIdentity mapId, byte[] bitmask) implements CustomPayload {
+    public record Broadcast(MapIdentity mapId, byte[] bitmask) implements CustomPacketPayload {
 
-        public static final CustomPayload.Id<Broadcast> ID =
-                new CustomPayload.Id<>(ExplorerMapRegistry.id("broadcast_discovery"));
+        public static final CustomPacketPayload.Type<Broadcast> TYPE =
+                new CustomPacketPayload.Type<>(ExplorerMapRegistry.id("broadcast_discovery"));
 
-        public static final PacketCodec<PacketByteBuf, Broadcast> CODEC =
-                PacketCodec.tuple(
+        public static final StreamCodec<FriendlyByteBuf, Broadcast> CODEC =
+                StreamCodec.composite(
                         MapIdentity.PACKET_CODEC, Broadcast::mapId,
-                        PacketCodecs.byteArray(MapEntryData.BYTE_COUNT), Broadcast::bitmask,
+                        ByteBufCodecs.byteArray(MapEntryData.BYTE_COUNT), Broadcast::bitmask,
                         Broadcast::new
                 );
 
-        @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+        @Override public CustomPacketPayload.Type<? extends CustomPacketPayload> type() { return TYPE; }
 
         public static void registerCommon() {
-            PayloadTypeRegistry.playS2C().register(ID, CODEC);
+            PayloadTypeRegistry.clientboundPlay().register(TYPE, CODEC);
         }
 
         @Environment(EnvType.CLIENT)
         public static void registerClient() {
-            ClientPlayNetworking.registerGlobalReceiver(ID, (payload, ctx) ->
+            ClientPlayNetworking.registerGlobalReceiver(TYPE, (payload, ctx) ->
                     ctx.client().execute(() -> handleOnClient(payload)));
         }
 
@@ -107,13 +107,13 @@ public final class SyncDiscoveryPayload {
         }
     }
 
-    public static void sendTo(ServerPlayerEntity player, MapIdentity mapId) {
-        sendTo(player, mapId, ExplorerMapSavedData.get(player.getServer()));
+    public static void sendTo(ServerPlayer player, MapIdentity mapId) {
+        sendTo(player, mapId, ExplorerMapSavedData.get(player.level().getServer()));
     }
 
-    private static void sendTo(ServerPlayerEntity player, MapIdentity mapId, ExplorerMapSavedData savedData) {
+    private static void sendTo(ServerPlayer player, MapIdentity mapId, ExplorerMapSavedData savedData) {
         ServerPlayNetworking.send(player,
-                new Broadcast(mapId, savedData.getPlayerDiscovery(mapId, player.getUuid())));
+                new Broadcast(mapId, savedData.getPlayerDiscovery(mapId, player.getUUID())));
     }
 
     public static final int UPLOAD_INTERVAL_TICKS = 60;

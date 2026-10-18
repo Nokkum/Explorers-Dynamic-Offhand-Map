@@ -5,14 +5,13 @@ import com.explorermap.expansion.ExpansionRecord;
 import com.explorermap.waypoint.Waypoint;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtOps;
-import net.minecraft.registry.RegistryOps;
-import net.minecraft.registry.RegistryWrapper;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.world.PersistentState;
-import net.minecraft.world.World;
+import net.minecraft.util.datafix.DataFixTypes;
+import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
 import java.util.ArrayDeque;
@@ -24,9 +23,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-public class ExplorerMapSavedData extends PersistentState {
+public class ExplorerMapSavedData extends SavedData {
 
-    private static final String SAVE_ID = "explorermap_data";
 
     private static final int MAX_ENTRY_ROWS = 20_000;
     private static final int MAX_TILE_ROWS = 20_000;
@@ -75,7 +73,7 @@ public class ExplorerMapSavedData extends PersistentState {
 
     public boolean mergeBitmask(MapIdentity mapId, byte[] bitmask) {
         boolean changed = getOrCreate(mapId).mergeBitmask(bitmask);
-        if (changed) markDirty();
+        if (changed) setDirty();
         return changed;
     }
 
@@ -123,7 +121,7 @@ public class ExplorerMapSavedData extends PersistentState {
             changed |= before != current[i];
         }
         boolean legacyChanged = getOrCreate(mapId).mergeBitmask(bitmask);
-        if (changed || legacyChanged) markDirty();
+        if (changed || legacyChanged) setDirty();
 
         if (!changed) return Set.of();
 
@@ -154,31 +152,31 @@ public class ExplorerMapSavedData extends PersistentState {
             return;
         }
         getOrCreate(mapId).addExpansion(record);
-        markDirty();
+        setDirty();
     }
 
     public void addWaypoint(MapIdentity mapId, Waypoint wp) {
         getOrCreate(mapId).addWaypoint(wp);
-        markDirty();
+        setDirty();
     }
 
     public boolean addWaypointCapacity(MapIdentity mapId) {
         getOrCreate(mapId).addWaypointCapacity();
-        markDirty();
+        setDirty();
         return true;
     }
 
     public boolean consumeWaypointShareCharge(MapIdentity mapId) {
         MapEntryData entry = get(mapId);
         if (entry == null || !entry.consumeWaypointShareCharge()) return false;
-        markDirty();
+        setDirty();
         return true;
     }
 
     public void removeWaypoint(MapIdentity mapId, UUID waypointId) {
         getOrCreate(mapId).removeWaypoint(waypointId);
         removeWaypointShares(mapId, waypointId);
-        markDirty();
+        setDirty();
     }
 
     public boolean canManageWaypoint(MapIdentity mapId, UUID waypointId, UUID playerId) {
@@ -201,7 +199,7 @@ public class ExplorerMapSavedData extends PersistentState {
                 .computeIfAbsent(mapId, ignored -> new HashMap<>())
                 .computeIfAbsent(recipientId.toString(), ignored -> new HashSet<>())
                 .add(waypointId);
-        markDirty();
+        setDirty();
         return true;
     }
 
@@ -266,21 +264,18 @@ public class ExplorerMapSavedData extends PersistentState {
         );
     }
 
-    public MapIdentity findTileId(World dimension, int scale, int centerX, int centerZ) {
-        return tileIndex.get(new TileKey(dimension.getRegistryKey().getValue().toString(), scale, centerX, centerZ));
+    public MapIdentity findTileId(Level dimension, int scale, int centerX, int centerZ) {
+        return tileIndex.get(new TileKey(dimension.dimension().identifier().toString(), scale, centerX, centerZ));
     }
 
-    public void recordTile(World dimension, int scale, int centerX, int centerZ, MapIdentity mapId) {
-        tileIndex.put(new TileKey(dimension.getRegistryKey().getValue().toString(), scale, centerX, centerZ), mapId);
-        markDirty();
+    public void recordTile(Level dimension, int scale, int centerX, int centerZ, MapIdentity mapId) {
+        tileIndex.put(new TileKey(dimension.dimension().identifier().toString(), scale, centerX, centerZ), mapId);
+        setDirty();
     }
 
     public static ExplorerMapSavedData get(MinecraftServer server) {
-        ServerWorld overworld = server.getWorld(World.OVERWORLD);
-        if (overworld == null) {
-            throw new IllegalStateException("[ExplorerMap] Overworld is not loaded - cannot access saved data");
-        }
-        return overworld.getPersistentStateManager().getOrCreate(TYPE, SAVE_ID);
+        // 26.1+: global saved data lives on the server's own data storage.
+        return server.getDataStorage().computeIfAbsent(TYPE);
     }
 
     private record EntryRow(MapIdentity key, MapEntryData value) {
@@ -413,31 +408,10 @@ public class ExplorerMapSavedData extends PersistentState {
             }
     );
 
-    public static final PersistentState.Type<ExplorerMapSavedData> TYPE = new PersistentState.Type<>(
-            ExplorerMapSavedData::new,
-            (nbt, registries) -> fromNbt(nbt, registries),
-            null
+    public static final SavedDataType<ExplorerMapSavedData> TYPE = new SavedDataType<>(
+            Identifier.fromNamespaceAndPath(ExplorerMapMod.MOD_ID, "data"),
+            () -> new ExplorerMapSavedData(),
+            CODEC,
+            DataFixTypes.LEVEL
     );
-
-    private static ExplorerMapSavedData fromNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registries) {
-        var ops = RegistryOps.of(NbtOps.INSTANCE, registries);
-        return CODEC.parse(ops, nbt)
-                .resultOrPartial(err -> ExplorerMapMod.LOGGER
-                        .error("[ExplorerMap] Failed to parse saved data: {}", err))
-                .orElseGet(ExplorerMapSavedData::new);
-    }
-
-    @Override
-    public NbtCompound writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registries) {
-        var ops = RegistryOps.of(NbtOps.INSTANCE, registries);
-        var encoded = CODEC.encodeStart(ops, this);
-        encoded.resultOrPartial(err -> ExplorerMapMod.LOGGER
-                .error("[ExplorerMap] Failed to encode saved data: {}", err))
-                .ifPresent(tag -> {
-                    if (tag instanceof NbtCompound compound) {
-                        nbt.copyFrom(compound);
-                    }
-                });
-        return nbt;
-    }
 }

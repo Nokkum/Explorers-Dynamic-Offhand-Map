@@ -1,12 +1,12 @@
 package com.explorermap.registry;
 
 import com.explorermap.ExplorerMapMod;
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.Identifier;
 
 public class ExplorerMapRegistry {
 
     public static Identifier id(String path) {
-        return Identifier.of(ExplorerMapMod.MOD_ID, path);
+        return Identifier.fromNamespaceAndPath(ExplorerMapMod.MOD_ID, path);
     }
 
     private static final java.util.Map<String, Identifier> WAYPOINT_ICONS = new java.util.LinkedHashMap<>();

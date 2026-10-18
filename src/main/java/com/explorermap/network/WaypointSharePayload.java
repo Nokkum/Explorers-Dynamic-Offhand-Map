@@ -7,51 +7,51 @@ import com.explorermap.registry.ExplorerMapRegistry;
 import com.explorermap.waypoint.Waypoint;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Hand;
-import net.minecraft.util.Uuids;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.core.UUIDUtil;
 
 import java.util.UUID;
 
 public record WaypointSharePayload(MapIdentity mapId, UUID waypointId, String targetName)
-        implements CustomPayload {
+        implements CustomPacketPayload {
 
     private static final int MAX_NAME_LENGTH = 64;
 
-    public static final CustomPayload.Id<WaypointSharePayload> ID =
-            new CustomPayload.Id<>(ExplorerMapRegistry.id("share_waypoint"));
+    public static final CustomPacketPayload.Type<WaypointSharePayload> TYPE =
+            new CustomPacketPayload.Type<>(ExplorerMapRegistry.id("share_waypoint"));
 
-    public static final PacketCodec<PacketByteBuf, WaypointSharePayload> CODEC =
-            PacketCodec.tuple(
+    public static final StreamCodec<FriendlyByteBuf, WaypointSharePayload> CODEC =
+            StreamCodec.composite(
                     MapIdentity.PACKET_CODEC, WaypointSharePayload::mapId,
-                    Uuids.PACKET_CODEC, WaypointSharePayload::waypointId,
-                    PacketCodecs.string(MAX_NAME_LENGTH), WaypointSharePayload::targetName,
+                    UUIDUtil.STREAM_CODEC, WaypointSharePayload::waypointId,
+                    ByteBufCodecs.stringUtf8(MAX_NAME_LENGTH), WaypointSharePayload::targetName,
                     WaypointSharePayload::new
             );
 
     @Override
-    public CustomPayload.Id<? extends CustomPayload> getId() {
-        return ID;
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
     public static void register() {
-        PayloadTypeRegistry.playC2S().register(ID, CODEC);
-        ServerPlayNetworking.registerGlobalReceiver(ID, (payload, context) ->
+        PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) ->
                 context.server().execute(() -> handleOnServer(context.player(), payload)));
     }
 
-    private static void handleOnServer(ServerPlayerEntity sender, WaypointSharePayload payload) {
-        var offHand = sender.getStackInHand(Hand.OFF_HAND);
+    private static void handleOnServer(ServerPlayer sender, WaypointSharePayload payload) {
+        var offHand = sender.getItemInHand(InteractionHand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) return;
 
-        MapIdentity heldRoot = MapIdentity.ofStack(offHand, sender.getServerWorld());
-        var savedData = ExplorerMapSavedData.get(sender.getServer());
+        MapIdentity heldRoot = MapIdentity.ofStack(offHand, sender.level());
+        var savedData = ExplorerMapSavedData.get(sender.level().getServer());
 
-        if (MapIdentity.resolveAuthorized(sender.getServer(), savedData, heldRoot, payload.mapId()) == null) {
+        if (MapIdentity.resolveAuthorized(sender.level().getServer(), savedData, heldRoot, payload.mapId()) == null) {
             ExplorerMapMod.LOGGER.warn(
                     "[ExplorerMap] ShareWaypoint: rejected from {} - map {} is invalid or not accessible from the held map",
                     sender.getName().getString(), payload.mapId().asKey());
@@ -62,14 +62,14 @@ public record WaypointSharePayload(MapIdentity mapId, UUID waypointId, String ta
         if (entry == null) return;
 
         Waypoint waypoint = entry.findWaypoint(payload.waypointId());
-        if (waypoint == null || !waypoint.isOwnedBy(sender.getUuid())) {
+        if (waypoint == null || !waypoint.isOwnedBy(sender.getUUID())) {
             ExplorerMapMod.LOGGER.warn(
                     "[ExplorerMap] ShareWaypoint: {} tried to share a waypoint they do not own",
                     sender.getName().getString());
             return;
         }
 
-        ServerPlayerEntity target = sender.getServer().getPlayerManager().getPlayer(payload.targetName());
+        ServerPlayer target = sender.level().getServer().getPlayerList().getPlayerByName(payload.targetName());
         if (target == null || target == sender) return;
 
         if (!savedData.consumeWaypointShareCharge(payload.mapId())) {
@@ -79,14 +79,14 @@ public record WaypointSharePayload(MapIdentity mapId, UUID waypointId, String ta
             return;
         }
 
-        if (!savedData.grantWaypointShare(payload.mapId(), payload.waypointId(), target.getUuid())) {
+        if (!savedData.grantWaypointShare(payload.mapId(), payload.waypointId(), target.getUUID())) {
             return;
         }
 
-        SyncWaypointsPayload.broadcastTo(sender.getServer(), payload.mapId());
+        SyncWaypointsPayload.broadcastTo(sender.level().getServer(), payload.mapId());
 
         MapIdentity targetHeld = MapIdentity.ofStack(
-                target.getStackInHand(Hand.OFF_HAND), target.getServerWorld());
+                target.getItemInHand(InteractionHand.OFF_HAND), target.level());
         if (targetHeld != null
                 && !targetHeld.equals(payload.mapId())
                 && savedData.isAccessibleFrom(targetHeld, payload.mapId())) {

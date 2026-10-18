@@ -3,37 +3,39 @@ package com.explorermap;
 import com.explorermap.config.ExplorerMapConfig;
 import com.explorermap.data.ClientMapCache;
 import com.explorermap.engine.ExplorationEngine;
+import com.explorermap.gui.CartographyTableScreen;
 import com.explorermap.gui.ExpansionFeedback;
 import com.explorermap.gui.FullMapScreen;
-import com.explorermap.gui.CartographyTableScreen;
 import com.explorermap.hud.MinimapHud;
-import com.explorermap.interaction.ExplorerMapClientInteractions;
 import com.explorermap.hud.TileTextureCache;
+import com.explorermap.interaction.ExplorerMapClientInteractions;
 import com.explorermap.network.ExpansionFailedPayload;
 import com.explorermap.network.GrantExpansionPayload;
 import com.explorermap.network.SyncDiscoveryPayload;
 import com.explorermap.network.SyncWaypointsPayload;
+import com.explorermap.registry.ExplorerMapRegistry;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.util.Hand;
-import org.lwjgl.glfw.GLFW;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.InteractionHand;
 
 @Environment(EnvType.CLIENT)
 public class ExplorerMapClient implements ClientModInitializer {
 
-    public static KeyBinding OPEN_MAP_KEY;
+    public static KeyMapping OPEN_MAP_KEY;
     private boolean minimapMouseDown;
 
-    public static void openCartographyTable(net.minecraft.util.math.BlockPos tablePos) {
-        var client = net.minecraft.client.MinecraftClient.getInstance();
-        if (client.player != null) client.setScreen(new CartographyTableScreen(tablePos));
+    public static void openCartographyTable(BlockPos tablePos) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player != null) client.gui.setScreen(new CartographyTableScreen(tablePos));
     }
 
     @Override
@@ -41,47 +43,47 @@ public class ExplorerMapClient implements ClientModInitializer {
         ExplorerMapConfig.load();
 
         GrantExpansionPayload.registerClient();
-
         SyncWaypointsPayload.registerClient();
-
         SyncDiscoveryPayload.Broadcast.registerClient();
-
         ExpansionFailedPayload.registerClient();
         ExplorerMapClientInteractions.register();
 
-        HudRenderCallback.EVENT.register(MinimapHud::render);
+        // HudRenderCallback was replaced by the HudElementRegistry. The translation key for
+        // this key category is "key.category.explorermap.main".
+        HudElementRegistry.addLast(ExplorerMapRegistry.id("minimap"), MinimapHud::render);
 
         ClientTickEvents.END_CLIENT_TICK.register(ExplorationEngine::tick);
 
-        OPEN_MAP_KEY = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        KeyMapping.Category category = KeyMapping.Category.register(ExplorerMapRegistry.id("main"));
+        OPEN_MAP_KEY = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.explorermap.open_map",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_M,
-                "category.explorermap"
+                InputConstants.Type.KEYSYM,
+                InputConstants.KEY_M,
+                category
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             ClientMapCache.tickRecency();
-            boolean mouseDown = client.currentScreen == null
-                    && GLFW.glfwGetMouseButton(
-                            client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_1) == GLFW.GLFW_PRESS;
+
+            // 26.3 replaced GLFW with SDL, so poll the mouse through vanilla's MouseHandler.
+            boolean mouseDown = client.gui.screen() == null && client.mouseHandler.isLeftPressed();
             if (mouseDown && !minimapMouseDown) {
                 MinimapHud.handleClick(client);
             }
             minimapMouseDown = mouseDown;
 
-            while (OPEN_MAP_KEY.wasPressed()) {
+            while (OPEN_MAP_KEY.consumeClick()) {
                 if (client.player != null) {
-                    client.setScreen(new FullMapScreen());
+                    client.gui.setScreen(new FullMapScreen());
                 }
             }
 
-            while (client.options.useKey.wasPressed()) {
-                if (client.currentScreen == null
+            while (client.options.keyUse.consumeClick()) {
+                if (client.gui.screen() == null
                         && client.player != null
-                        && client.player.getMainHandStack().isEmpty()
-                        && ExplorerMapMod.isFilledMap(client.player.getStackInHand(Hand.OFF_HAND))) {
-                    client.setScreen(new FullMapScreen());
+                        && client.player.getMainHandItem().isEmpty()
+                        && ExplorerMapMod.isFilledMap(client.player.getItemInHand(InteractionHand.OFF_HAND))) {
+                    client.gui.setScreen(new FullMapScreen());
                 }
             }
         });

@@ -1,19 +1,21 @@
 package com.explorermap.hud;
 
-import com.explorermap.data.MapEntryData;
-import com.explorermap.data.MapIdentity;
+import com.explorermap.ExplorerMapMod;
 import com.explorermap.api.ExplorerMapApi;
 import com.explorermap.config.ExplorerMapConfig;
+import com.explorermap.data.MapEntryData;
+import com.explorermap.data.MapIdentity;
+import com.mojang.blaze3d.platform.NativeImage;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.block.MapColor;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.item.map.MapState;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.Heightmap;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.material.MapColor;
+import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -21,7 +23,7 @@ import java.util.Map;
 @Environment(EnvType.CLIENT)
 public final class TileTextureCache {
 
-    private static final int FOG_ABGR = abgr(0xFF, 0x0C, 0x0C, 0x0C);
+    private static final int FOG_ARGB = 0xFF0C0C0C;
 
     private static final TileTextureCache INSTANCE = new TileTextureCache();
     public static TileTextureCache getInstance() { return INSTANCE; }
@@ -31,7 +33,7 @@ public final class TileTextureCache {
 
     private TileTextureCache() {}
 
-    public Identifier getOrUpdate(MapIdentity mapId, MapState mapState, MapEntryData mapEntry) {
+    public Identifier getOrUpdate(MapIdentity mapId, MapItemSavedData mapState, MapEntryData mapEntry) {
         Entry entry = entries.get(mapId);
         long gen = mapEntry.getVisualGeneration();
         boolean highlightRecent = ExplorerMapConfig.get().highlightRecentDiscoveries;
@@ -54,11 +56,11 @@ public final class TileTextureCache {
     }
 
     public void clearAll() {
-        var tm = MinecraftClient.getInstance().getTextureManager();
+        var tm = Minecraft.getInstance().getTextureManager();
         for (Entry e : entries.values()) {
             if (e.texture != null) {
-                tm.destroyTexture(e.identifier);
-                e.texture.close();
+                // release() unregisters the texture and closes it (and its NativeImage).
+                tm.release(e.identifier);
                 e.texture = null;
             }
         }
@@ -66,28 +68,27 @@ public final class TileTextureCache {
         nextSlot = 0;
     }
 
-    private void rebuild(Entry entry, MapState mapState, MapEntryData mapEntry) {
+    private void rebuild(Entry entry, MapItemSavedData mapState, MapEntryData mapEntry) {
         byte[] colors  = mapState.colors;
         byte[] bitmask = mapEntry.getDiscoveredPixelsCopy();
-        var world = MinecraftClient.getInstance().world;
+        var world = Minecraft.getInstance().level;
         int scale = 1 << mapState.scale;
         int minX = mapState.centerX - 64 * scale;
         int minZ = mapState.centerZ - 64 * scale;
-        boolean sameDimension = world != null && world.getRegistryKey().equals(mapState.dimension);
+        boolean sameDimension = world != null && world.dimension().equals(mapState.dimension);
 
-        var tm = MinecraftClient.getInstance().getTextureManager();
+        var tm = Minecraft.getInstance().getTextureManager();
 
         NativeImage target;
         if (entry.texture == null) {
             target = new NativeImage(NativeImage.Format.RGBA, 128, 128, false);
         } else {
-            NativeImage texImage = entry.texture.getImage();
+            NativeImage texImage = entry.texture.getPixels();
             if (texImage != null) {
                 target = texImage;
             } else {
                 target = new NativeImage(NativeImage.Format.RGBA, 128, 128, false);
-                tm.destroyTexture(entry.identifier);
-                entry.texture.close();
+                tm.release(entry.identifier);
                 entry.texture = null;
             }
         }
@@ -97,50 +98,48 @@ public final class TileTextureCache {
                 int bit = row * 128 + col;
                 boolean discovered = (bitmask[bit >> 3] & (1 << (bit & 7))) != 0;
 
-                int abgr;
+                int argb;
                 if (discovered) {
-                    int vanilla = MapColor.getRenderColor(colors[row * 128 + col] & 0xFF);
-                    int argb = vanilla;
+                    argb = MapColor.getColorFromPackedId(colors[row * 128 + col] & 0xFF);
                     if (sameDimension) {
                         int sampleX = minX + col * scale + scale / 2;
                         int sampleZ = minZ + row * scale + scale / 2;
                         int sampleY = surfaceY(world, sampleX, sampleZ);
                         var sample = new BlockPos(sampleX, sampleY, sampleZ);
-                        argb = ExplorerMapApi.colorFor(world, sample, vanilla);
+                        argb = ExplorerMapApi.colorFor(world, sample, argb);
                     }
                     argb |= 0xFF000000;
                     if (ExplorerMapConfig.get().highlightRecentDiscoveries) {
                         argb = highlightRecent(argb, mapEntry.recentValue(col, row));
                     }
-                    abgr = argbToAbgr(argb);
                 } else {
-                    abgr = FOG_ABGR;
+                    argb = FOG_ARGB;
                 }
-                target.setColor(col, row, abgr);
+                // setPixel() takes ARGB (setPixelABGR() is the ABGR variant).
+                // If map colours ever look red/blue swapped, switch this call to setPixelABGR.
+                target.setPixel(col, row, argb);
             }
         }
 
         if (entry.texture == null) {
-            entry.texture    = new NativeImageBackedTexture(target);
-            entry.identifier = tm.registerDynamicTexture("explorermap/tile/" + entry.slot, entry.texture);
+            Identifier id = Identifier.fromNamespaceAndPath(ExplorerMapMod.MOD_ID, "tile/" + entry.slot);
+            int slot = entry.slot;
+            entry.texture    = new DynamicTexture(() -> "explorermap tile " + slot, target);
+            entry.identifier = id;
+            tm.register(id, entry.texture);
         } else {
             entry.texture.upload();
         }
     }
 
-    private static int surfaceY(net.minecraft.world.World world, int x, int z) {
+    private static int surfaceY(Level world, int x, int z) {
         if (world == null) return 64;
         try {
-            int topY = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z);
-            return Math.max(world.getBottomY(), topY - 1);
+            int topY = world.getHeight(Heightmap.Types.WORLD_SURFACE, x, z);
+            return Math.max(world.getMinY(), topY - 1);
         } catch (Exception e) {
             return 64;
         }
-    }
-
-    private static int argbToAbgr(int argb) {
-        int a = (argb >> 24) & 0xFF, r = (argb >> 16) & 0xFF, g = (argb >> 8) & 0xFF, b = argb & 0xFF;
-        return (a << 24) | (b << 16) | (g << 8) | r;
     }
 
     private static int highlightRecent(int argb, int recency) {
@@ -155,16 +154,12 @@ public final class TileTextureCache {
         return (argb & 0xFF000000) | (r << 16) | (g << 8) | b;
     }
 
-    private static int abgr(int a, int b, int g, int r) {
-        return (a << 24) | (b << 16) | (g << 8) | r;
-    }
-
     private static final class Entry {
         final int slot;
         long generation = Long.MIN_VALUE;
         long integrationGeneration = Long.MIN_VALUE;
         boolean highlightRecent = true;
-        NativeImageBackedTexture texture;
+        DynamicTexture texture;
         Identifier identifier;
 
         Entry(int slot) { this.slot = slot; }
