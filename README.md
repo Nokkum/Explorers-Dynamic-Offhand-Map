@@ -9,3 +9,9 @@ The Explorer's Dynamic Offhand Map Mod is inspired by Minimap Mods  such as [Xae
 
 ## [**License**](https://github.com/Nokkum/Explorers-Dynamic-Offhand-Map?tab=Apache-2.0-1-ov-file)
 The Explorer's Dynamic Offhand Map is Licensed under the [Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0)
+
+<details>
+<summary>Open</summary>
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Nokkum/Explorers-Dynamic-Offhand-Map)
+</details>
