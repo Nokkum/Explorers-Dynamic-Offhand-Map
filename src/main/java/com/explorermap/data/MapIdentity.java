@@ -80,7 +80,8 @@ public record MapIdentity(ResourceKey<Level> dimension, int mapId) {
         return dimension.identifier() + "#" + mapId;
     }
 
-    private static final Codec<ResourceKey<Level>> DIMENSION_CODEC = Codec.STRING.comapFlatMap(
+    private static final Codec<ResourceKey<Level>> DIMENSION_CODEC =
+            CodecUtil.boundedString(CodecUtil.MAX_DIMENSION_ID_LENGTH).comapFlatMap(
             raw -> {
                 Identifier id = Identifier.tryParse(raw);
                 return id == null

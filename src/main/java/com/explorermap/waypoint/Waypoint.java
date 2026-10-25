@@ -1,5 +1,6 @@
 package com.explorermap.waypoint;
 
+import com.explorermap.data.CodecUtil;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -67,13 +68,6 @@ public record Waypoint(UUID id,
     private static final Pattern OWNER_FORMAT =
             Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 
-    private static Codec<String> boundedString(int maxLength) {
-        return Codec.STRING.comapFlatMap(value -> value.length() <= maxLength
-                ? DataResult.success(value)
-                : DataResult.error(() -> "String of " + value.length()
-                        + " characters exceeds the maximum of " + maxLength), Function.identity());
-    }
-
     private static DataResult<Waypoint> validateOwner(Waypoint waypoint) {
         String owner = waypoint.ownerUuid();
         return owner == null || owner.isEmpty()
@@ -84,14 +78,14 @@ public record Waypoint(UUID id,
 
     public static final Codec<Waypoint> CODEC = RecordCodecBuilder.<Waypoint>create(instance ->
             instance.group(
-                    boundedString(MAX_ID_LENGTH).optionalFieldOf("id", "")
+                    CodecUtil.boundedString(MAX_ID_LENGTH).optionalFieldOf("id", "")
                             .forGetter(w -> w.id() == null ? "" : w.id().toString()),
-                    boundedString(MAX_NAME_LENGTH).fieldOf("name").forGetter(Waypoint::name),
+                    CodecUtil.boundedString(MAX_NAME_LENGTH).fieldOf("name").forGetter(Waypoint::name),
                     Codec.DOUBLE.fieldOf("world_x").forGetter(Waypoint::worldX),
                     Codec.DOUBLE.fieldOf("world_z").forGetter(Waypoint::worldZ),
-                    boundedString(MAX_ICON_ID_LENGTH).fieldOf("icon_id").forGetter(Waypoint::iconId),
+                    CodecUtil.boundedString(MAX_ICON_ID_LENGTH).fieldOf("icon_id").forGetter(Waypoint::iconId),
                     Codec.INT.fieldOf("color").forGetter(Waypoint::color),
-                    Codec.STRING.optionalFieldOf("owner_uuid", "")
+                    CodecUtil.boundedString(MAX_OWNER_LENGTH).optionalFieldOf("owner_uuid", "")
                             .forGetter(Waypoint::ownerUuid)
             ).apply(instance, (idRaw, name, worldX, worldZ, iconId, color, ownerUuid) -> {
                 UUID id = parseIdOrNull(idRaw);

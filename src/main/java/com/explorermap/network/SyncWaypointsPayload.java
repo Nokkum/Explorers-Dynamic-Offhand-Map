@@ -62,13 +62,18 @@ public record SyncWaypointsPayload(
     }
 
     public static void broadcastTo(MinecraftServer server, MapIdentity mapId) {
+        var savedData = ExplorerMapSavedData.get(server);
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            var offHand = p.getItemInHand(InteractionHand.OFF_HAND);
-            if (!ExplorerMapMod.isFilledMap(offHand)) continue;
-            if (mapId.equals(MapIdentity.ofStack(offHand, p.level()))) {
+            if (ExpansionFamilySync.hasSynced(p.getUUID(), mapId) || canViewFromHeldMap(savedData, p, mapId)) {
                 sendTo(p, mapId);
             }
         }
+    }
+
+    private static boolean canViewFromHeldMap(ExplorerMapSavedData savedData, ServerPlayer player, MapIdentity mapId) {
+        var offHand = player.getItemInHand(InteractionHand.OFF_HAND);
+        if (!ExplorerMapMod.isFilledMap(offHand)) return false;
+        return savedData.isAccessibleFrom(MapIdentity.ofStack(offHand, player.level()), mapId);
     }
 
     @Environment(EnvType.CLIENT)

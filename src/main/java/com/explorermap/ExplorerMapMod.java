@@ -6,6 +6,7 @@ import com.explorermap.network.GrantExpansionPayload;
 import com.explorermap.network.RequestExpansionPayload;
 import com.explorermap.network.SaveWaypointPayload;
 import com.explorermap.network.SyncDiscoveryPayload;
+import com.explorermap.network.SyncExpansionsPayload;
 import com.explorermap.network.SyncWaypointsPayload;
 import com.explorermap.network.WaypointSharePayload;
 import com.explorermap.network.InsertWaypointCapacityPayload;
@@ -30,6 +31,7 @@ public class ExplorerMapMod implements ModInitializer {
         PayloadTypeRegistry.clientboundPlay().register(SyncWaypointsPayload.TYPE,   SyncWaypointsPayload.CODEC);
         SyncDiscoveryPayload.Broadcast.registerCommon();
         SyncDiscoveryPayload.Ack.registerCommon();
+        SyncExpansionsPayload.registerCommon();
         ExpansionFailedPayload.registerCommon();
 
         RequestExpansionPayload.register();

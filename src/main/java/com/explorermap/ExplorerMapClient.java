@@ -13,6 +13,7 @@ import com.explorermap.interaction.ExplorerMapClientInteractions;
 import com.explorermap.network.ExpansionFailedPayload;
 import com.explorermap.network.GrantExpansionPayload;
 import com.explorermap.network.SyncDiscoveryPayload;
+import com.explorermap.network.SyncExpansionsPayload;
 import com.explorermap.network.SyncWaypointsPayload;
 import com.explorermap.registry.ExplorerMapRegistry;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -47,6 +48,7 @@ public class ExplorerMapClient implements ClientModInitializer {
         SyncWaypointsPayload.registerClient();
         SyncDiscoveryPayload.Broadcast.registerClient();
         SyncDiscoveryPayload.Ack.registerClient();
+        SyncExpansionsPayload.registerClient();
         ExpansionFailedPayload.registerClient();
         ExplorerMapClientInteractions.register();
 

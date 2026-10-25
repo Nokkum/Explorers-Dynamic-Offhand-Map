@@ -131,6 +131,8 @@ public record RequestExpansionPayload(
 
         ServerPlayNetworking.send(player,
                 new GrantExpansionPayload(payload.direction(), mapId, newMapId, payload.highDetail()));
+
+        ExpansionFamilySync.onExpansionChanged(player.level().getServer(), mapId);
     }
 
     private static ExpansionFailedPayload.Reason checkResources(ServerPlayer player, boolean highDetail) {

@@ -256,7 +256,8 @@ public class ExplorerMapSavedData extends SavedData {
     public record TileKey(String dimension, int scale, int centerX, int centerZ) {
         static final Codec<TileKey> CODEC = RecordCodecBuilder.create(instance ->
                 instance.group(
-                        Codec.STRING.fieldOf("dimension").forGetter(TileKey::dimension),
+                        CodecUtil.boundedString(CodecUtil.MAX_DIMENSION_ID_LENGTH)
+                                .fieldOf("dimension").forGetter(TileKey::dimension),
                         Codec.INT.fieldOf("scale").forGetter(TileKey::scale),
                         Codec.INT.fieldOf("center_x").forGetter(TileKey::centerX),
                         Codec.INT.fieldOf("center_z").forGetter(TileKey::centerZ)
@@ -300,8 +301,10 @@ public class ExplorerMapSavedData extends SavedData {
         static final Codec<ShareRow> CODEC = RecordCodecBuilder.create(instance ->
                 instance.group(
                         MapIdentity.CODEC.fieldOf("map_id").forGetter(ShareRow::mapId),
-                        Codec.STRING.fieldOf("recipient_uuid").forGetter(ShareRow::recipientUuid),
-                        Codec.STRING.fieldOf("waypoint_id").forGetter(ShareRow::waypointId)
+                        CodecUtil.boundedString(CodecUtil.MAX_UUID_STRING_LENGTH)
+                                .fieldOf("recipient_uuid").forGetter(ShareRow::recipientUuid),
+                        CodecUtil.boundedString(CodecUtil.MAX_UUID_STRING_LENGTH)
+                                .fieldOf("waypoint_id").forGetter(ShareRow::waypointId)
                 ).apply(instance, ShareRow::new)
         );
     }
@@ -310,7 +313,8 @@ public class ExplorerMapSavedData extends SavedData {
         static final Codec<DiscoveryRow> CODEC = RecordCodecBuilder.create(instance ->
                 instance.group(
                         MapIdentity.CODEC.fieldOf("map_id").forGetter(DiscoveryRow::mapId),
-                        Codec.STRING.fieldOf("player_uuid").forGetter(DiscoveryRow::playerUuid),
+                        CodecUtil.boundedString(CodecUtil.MAX_UUID_STRING_LENGTH)
+                                .fieldOf("player_uuid").forGetter(DiscoveryRow::playerUuid),
                         CodecUtil.boundedList(Codec.BYTE, MapEntryData.BYTE_COUNT, "bitmask").xmap(
                                 list -> {
                                     byte[] result = new byte[MapEntryData.BYTE_COUNT];

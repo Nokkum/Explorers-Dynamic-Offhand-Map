@@ -196,6 +196,11 @@ public final class MapEntryData {
         expansions.add(record);
     }
 
+    public void replaceExpansions(List<ExpansionRecord> records) {
+        expansions.clear();
+        for (ExpansionRecord record : records) addExpansion(record);
+    }
+
     public boolean hasExpansion(ExpansionRecord.Direction dir) {
         return expansions.stream().anyMatch(r -> r.direction() == dir);
     }

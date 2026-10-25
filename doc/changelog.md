@@ -1,5 +1,10 @@
 <h1 align="center"> Changelog </h1>
 
+v2.2.0
+1. A new `SyncExpansionsPayload`, plus `ExpansionFamilySync` on the server. When a player's held map changes or they join, the server walks the expansion family (visited set, 256-map cap, same traversal as the client grid) and sends the expansion links. It sends each map's waypoints and non-empty discovery once per session. Expanding also triggers this for the requester and for anyone whose held map reaches the expanded map.
+2. `broadcastTo` now also sends to players whose held map reaches the changed map via `isAccessibleFrom`, and to players who already have that map synced. I added that second condition because each map is sent once per session, so a client that already holds a map must keep getting its updates.
+3. One shared `CodecUtil.boundedString`. It rejects oversized values on load and never on save, so a save can't fail on data already in memory. Bounded the two dimension-string fields and the direction name in persistent data, which were the same pattern.
+
 # v2.1.1
 1. `ExpansionFailedPayload.Reason`: it now travels as a varint ordinal, the same way`Direction` was changed, so an unbounded string can no longer be read. Out-of-range values are rejected with a `DecoderException`.
 2. `Direction.CODEC` (saved data): an unknown direction in a save now returns a decode error instead of throwing. The affected expansion record is skipped, as the other malformed-data checks already do, and the rest of the save loads.

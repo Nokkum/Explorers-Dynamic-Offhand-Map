@@ -2,6 +2,7 @@ package com.explorermap;
 
 import com.explorermap.data.ExplorerMapSavedData;
 import com.explorermap.data.MapIdentity;
+import com.explorermap.network.ExpansionFamilySync;
 import com.explorermap.network.SyncWaypointsPayload;
 import com.explorermap.network.SyncDiscoveryPayload;
 import com.explorermap.structure.StructureWaypointDetector;
@@ -38,6 +39,7 @@ public final class ServerEventHandler {
             UUID playerId = handler.getPlayer().getUUID();
             LAST_OFFHAND_MAP.remove(playerId);
             SyncDiscoveryPayload.forgetPlayer(playerId);
+            ExpansionFamilySync.forget(playerId);
         });
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (++offHandCheckCounter >= OFFHAND_CHECK_INTERVAL_TICKS) {
@@ -91,6 +93,7 @@ public final class ServerEventHandler {
 
         SyncWaypointsPayload.sendTo(player, mapId);
         SyncDiscoveryPayload.sendTo(player, mapId);
+        ExpansionFamilySync.sendTo(player.level().getServer(), player, mapId);
 
         var savedData = ExplorerMapSavedData.get(player.level().getServer());
         StructureWaypointDetector.checkAndPlace(player.level().getServer(), player, mapId, mapState, savedData, null);

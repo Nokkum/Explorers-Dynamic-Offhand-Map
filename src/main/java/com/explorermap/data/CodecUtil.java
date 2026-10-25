@@ -8,10 +8,21 @@ import com.mojang.serialization.DynamicOps;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
-final class CodecUtil {
+public final class CodecUtil {
+
+    public static final int MAX_UUID_STRING_LENGTH = 36;
+    public static final int MAX_DIMENSION_ID_LENGTH = 256;
 
     private CodecUtil() {}
+
+    public static Codec<String> boundedString(int maxLength) {
+        return Codec.STRING.comapFlatMap(value -> value.length() <= maxLength
+                ? DataResult.success(value)
+                : DataResult.error(() -> "String of " + value.length()
+                        + " characters exceeds the maximum of " + maxLength), Function.identity());
+    }
 
     static <A> Codec<List<A>> boundedList(Codec<A> elementCodec, int maxSize, String label) {
         return new Codec<List<A>>() {
