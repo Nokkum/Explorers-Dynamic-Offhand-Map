@@ -2,6 +2,7 @@ package com.explorermap.expansion;
 
 import com.explorermap.data.MapIdentity;
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import io.netty.handler.codec.DecoderException;
 import net.minecraft.network.FriendlyByteBuf;
@@ -13,9 +14,16 @@ public record ExpansionRecord(Direction direction, MapIdentity target, boolean h
         NORTH, SOUTH, EAST, WEST;
 
         public static final Codec<Direction> CODEC =
-                Codec.STRING.xmap(Direction::valueOf, Direction::name);
+                Codec.STRING.comapFlatMap(Direction::parse, Direction::name);
 
         private static final Direction[] VALUES = values();
+
+        private static DataResult<Direction> parse(String raw) {
+            for (Direction direction : VALUES) {
+                if (direction.name().equals(raw)) return DataResult.success(direction);
+            }
+            return DataResult.error(() -> "Invalid ExpansionRecord.Direction: " + raw);
+        }
 
         public static final StreamCodec<FriendlyByteBuf, Direction> PACKET_CODEC = StreamCodec.ofMember(
                 (Direction value, FriendlyByteBuf buf) -> buf.writeVarInt(value.ordinal()),

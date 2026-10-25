@@ -24,15 +24,16 @@ public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason
         NO_MAP_IN_OFFHAND,
         CYCLE_DETECTED;
 
+        private static final Reason[] VALUES = values();
+
         static final StreamCodec<FriendlyByteBuf, Reason> PACKET_CODEC = StreamCodec.ofMember(
-                (Reason value, FriendlyByteBuf buf) -> buf.writeUtf(value.name()),
+                (Reason value, FriendlyByteBuf buf) -> buf.writeVarInt(value.ordinal()),
                 (FriendlyByteBuf buf) -> {
-                    String raw = buf.readUtf();
-                    try {
-                        return Reason.valueOf(raw);
-                    } catch (IllegalArgumentException e) {
-                        throw new DecoderException("Invalid ExpansionFailedPayload.Reason: " + raw);
+                    int ordinal = buf.readVarInt();
+                    if (ordinal < 0 || ordinal >= VALUES.length) {
+                        throw new DecoderException("Invalid ExpansionFailedPayload.Reason ordinal: " + ordinal);
                     }
+                    return VALUES[ordinal];
                 }
         );
     }

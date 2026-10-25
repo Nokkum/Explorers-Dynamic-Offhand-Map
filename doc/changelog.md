@@ -1,5 +1,12 @@
 <h1 align="center"> Changelog </h1>
 
+# v2.1.1
+1. `ExpansionFailedPayload.Reason`: it now travels as a varint ordinal, the same way`Direction` was changed, so an unbounded string can no longer be read. Out-of-range values are rejected with a `DecoderException`.
+2. `Direction.CODEC` (saved data): an unknown direction in a save now returns a decode error instead of throwing. The affected expansion record is skipped, as the other malformed-data checks already do, and the rest of the save loads.
+3. Cross-dimension warning in `TileGrid.build`: each expansion that can't be shown in the current dimension is now logged once per session instead of on every grid build. Renamed `resetTruncationReports()` to `resetReportedWarnings()` because it now clears both sets of already-reported warnings, and the disconnect handler in `ExplorerMapClient` calls the new name.
+
+
+# v2.1.0
 1. The waypoint collection codec is now capped at 512 during decode. The server also truncates its list to 512 (with a warning) before sending, because the capped codec would otherwise throw on larger lists. Removed the client-side size check, which could no longer trigger.
 2. `Direction` is sent as a single varint ordinal instead of a string, and out-of-range values are rejected.
 3. The persistent discovery bitmask now uses existing `CodecUtil.boundedList`, capped at 256 longs.

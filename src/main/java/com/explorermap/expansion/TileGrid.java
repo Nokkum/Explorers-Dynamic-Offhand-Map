@@ -19,6 +19,7 @@ import java.util.Set;
 public final class TileGrid {
 
     private static final Set<MapIdentity> TRUNCATION_REPORTED = new HashSet<>();
+    private static final Set<String> DIMENSION_SKIP_REPORTED = new HashSet<>();
 
     public record TileEntry(
             MapIdentity mapId,
@@ -34,8 +35,9 @@ public final class TileGrid {
 
     public List<TileEntry> tiles() { return tiles; }
 
-    public static void resetTruncationReports() {
+    public static void resetReportedWarnings() {
         TRUNCATION_REPORTED.clear();
+        DIMENSION_SKIP_REPORTED.clear();
     }
 
     public boolean hasTileAt(int gridX, int gridZ) {
@@ -92,9 +94,11 @@ public final class TileGrid {
                 if (!visited.add(target)) continue;
 
                 if (!target.dimension().equals(world.dimension())) {
-                    ExplorerMapMod.LOGGER.warn(
-                            "[ExplorerMap] Skipping expansion to {} - it isn't in the current dimension {}",
-                            target.asKey(), world.dimension().identifier());
+                    if (DIMENSION_SKIP_REPORTED.add(target.asKey() + "@" + world.dimension().identifier())) {
+                        ExplorerMapMod.LOGGER.warn(
+                                "[ExplorerMap] Skipping expansion to {} - it isn't in the current dimension {}",
+                                target.asKey(), world.dimension().identifier());
+                    }
                     continue;
                 }
 

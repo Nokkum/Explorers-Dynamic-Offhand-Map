@@ -93,7 +93,7 @@ public class ExplorerMapClient implements ClientModInitializer {
             TileTextureCache.getInstance().clearAll();
             ClientMapCache.clearAll();
             SyncDiscoveryPayload.resetUploadState();
-            TileGrid.resetTruncationReports();
+            TileGrid.resetReportedWarnings();
             ExpansionFeedback.clear();
         });
 
