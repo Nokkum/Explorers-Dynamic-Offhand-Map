@@ -34,8 +34,11 @@ public final class ServerEventHandler {
 
             server.execute(() -> onPlayerJoin(player));
         });
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
-                LAST_OFFHAND_MAP.remove(handler.getPlayer().getUUID()));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            UUID playerId = handler.getPlayer().getUUID();
+            LAST_OFFHAND_MAP.remove(playerId);
+            SyncDiscoveryPayload.forgetPlayer(playerId);
+        });
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (++offHandCheckCounter >= OFFHAND_CHECK_INTERVAL_TICKS) {
                 offHandCheckCounter = 0;

@@ -3,6 +3,7 @@ package com.explorermap;
 import com.explorermap.config.ExplorerMapConfig;
 import com.explorermap.data.ClientMapCache;
 import com.explorermap.engine.ExplorationEngine;
+import com.explorermap.expansion.TileGrid;
 import com.explorermap.gui.CartographyTableScreen;
 import com.explorermap.gui.ExpansionFeedback;
 import com.explorermap.gui.FullMapScreen;
@@ -45,6 +46,7 @@ public class ExplorerMapClient implements ClientModInitializer {
         GrantExpansionPayload.registerClient();
         SyncWaypointsPayload.registerClient();
         SyncDiscoveryPayload.Broadcast.registerClient();
+        SyncDiscoveryPayload.Ack.registerClient();
         ExpansionFailedPayload.registerClient();
         ExplorerMapClientInteractions.register();
 
@@ -91,6 +93,7 @@ public class ExplorerMapClient implements ClientModInitializer {
             TileTextureCache.getInstance().clearAll();
             ClientMapCache.clearAll();
             SyncDiscoveryPayload.resetUploadState();
+            TileGrid.resetTruncationReports();
             ExpansionFeedback.clear();
         });
 

@@ -37,7 +37,7 @@ public record SyncWaypointsPayload(
             StreamCodec.composite(
                     MapIdentity.PACKET_CODEC,
                     SyncWaypointsPayload::mapId,
-                    ByteBufCodecs.collection(ArrayList::new, Waypoint.PACKET_CODEC),
+                    ByteBufCodecs.collection(ArrayList::new, Waypoint.PACKET_CODEC, MAX_WAYPOINTS),
                     SyncWaypointsPayload::waypoints,
                     ByteBufCodecs.VAR_INT, SyncWaypointsPayload::waypointCapacity,
                     ByteBufCodecs.VAR_INT, SyncWaypointsPayload::waypointShareCharges,
@@ -50,6 +50,12 @@ public record SyncWaypointsPayload(
     public static void sendTo(ServerPlayer player, MapIdentity mapId) {
         var savedData = ExplorerMapSavedData.get(player.level().getServer());
         List<Waypoint> waypoints = savedData.visibleWaypoints(mapId, player.getUUID());
+        if (waypoints.size() > MAX_WAYPOINTS) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] Map {} has {} waypoints visible to {}; only the first {} are synced",
+                    mapId.asKey(), waypoints.size(), player.getName().getString(), MAX_WAYPOINTS);
+            waypoints = List.copyOf(waypoints.subList(0, MAX_WAYPOINTS));
+        }
         var entry = savedData.getOrCreate(mapId);
         ServerPlayNetworking.send(player, new SyncWaypointsPayload(
                 mapId, waypoints, entry.getWaypointCapacity(), entry.getWaypointShareCharges()));
@@ -73,12 +79,6 @@ public record SyncWaypointsPayload(
 
     @Environment(EnvType.CLIENT)
     private static void handleOnClient(SyncWaypointsPayload payload) {
-        if (payload.waypoints().size() > MAX_WAYPOINTS) {
-            ExplorerMapMod.LOGGER.warn("[ExplorerMap] Ignoring oversized waypoint sync ({} entries)",
-                    payload.waypoints().size());
-            return;
-        }
-
         var mapEntry = ClientMapCache.getOrCreate(payload.mapId());
         mapEntry.replaceAllWaypoints(payload.waypoints());
         mapEntry.setWaypointCapacity(payload.waypointCapacity(), payload.waypointShareCharges());

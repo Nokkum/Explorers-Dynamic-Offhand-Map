@@ -19,8 +19,6 @@ public final class MapEntryData {
     public static final int PIXEL_COUNT = MAP_SIZE * MAP_SIZE;
     public static final int BYTE_COUNT  = PIXEL_COUNT / 8;
 
-    private static final int MAX_WAYPOINT_NAME_LENGTH = 64;
-    private static final int MAX_ICON_ID_LENGTH = 128;
     private static final int MAX_WAYPOINTS_ON_LOAD = 4096;
     private static final int MAX_EXPANSIONS_ON_LOAD = 4096;
     private static final int MAX_PENDING_STRUCTURE_CHUNKS = 4096;
@@ -266,7 +264,8 @@ public final class MapEntryData {
         pendingStructureChunks.remove(chunkPosLong);
     }
 
-    private static final Codec<byte[]> BITMASK_CODEC = Codec.LONG.listOf().xmap(
+    private static final Codec<byte[]> BITMASK_CODEC = CodecUtil.boundedList(
+            Codec.LONG, BYTE_COUNT / 8, "discovered_pixels").xmap(
             longs -> {
                 byte[] arr = new byte[BYTE_COUNT];
                 int n = Math.min(longs.size(), BYTE_COUNT / 8);
@@ -289,8 +288,8 @@ public final class MapEntryData {
 
     private static boolean isValidOnLoad(Waypoint wp) {
         if (wp == null || wp.id() == null) return false;
-        if (wp.name() == null || wp.name().isBlank() || wp.name().length() > MAX_WAYPOINT_NAME_LENGTH) return false;
-        if (wp.iconId() == null || wp.iconId().isBlank() || wp.iconId().length() > MAX_ICON_ID_LENGTH) return false;
+        if (wp.name() == null || wp.name().isBlank() || wp.name().length() > Waypoint.MAX_NAME_LENGTH) return false;
+        if (wp.iconId() == null || wp.iconId().isBlank() || wp.iconId().length() > Waypoint.MAX_ICON_ID_LENGTH) return false;
         if (!ExplorerMapRegistry.isRegisteredIcon(wp.iconId())) return false;
         if (!Double.isFinite(wp.worldX()) || !Double.isFinite(wp.worldZ())) return false;
         return true;

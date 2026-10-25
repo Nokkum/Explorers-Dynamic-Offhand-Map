@@ -27,7 +27,6 @@ import net.minecraft.world.level.ClipContext;
 public class ExplorationEngine {
 
     private static final double MAX_RANGE = 256.0;
-    private static final int MAX_UPLOADS_PER_WINDOW = 8;
 
     private static int tickCounter = 0;
 
@@ -72,11 +71,12 @@ public class ExplorationEngine {
     private static void uploadDirtyTiles(TileGrid grid) {
         int sent = 0;
         for (TileGrid.TileEntry tile : grid.tiles()) {
-            if (sent >= MAX_UPLOADS_PER_WINDOW) break;
+            if (sent >= SyncDiscoveryPayload.UPLOADS_PER_WINDOW) break;
             MapEntryData entry = tile.entry();
             long gen = entry.getDiscoveryGeneration();
-            if (!SyncDiscoveryPayload.isDirty(tile.mapId(), gen)) continue;
-            ClientPlayNetworking.send(new SyncDiscoveryPayload.Upload(tile.mapId(), entry.getDiscoveredPixelsCopy()));
+            if (!SyncDiscoveryPayload.needsUpload(tile.mapId(), gen)) continue;
+            ClientPlayNetworking.send(new SyncDiscoveryPayload.Upload(
+                    tile.mapId(), gen, entry.getDiscoveredPixelsCopy()));
             SyncDiscoveryPayload.markUploaded(tile.mapId(), gen);
             sent++;
         }

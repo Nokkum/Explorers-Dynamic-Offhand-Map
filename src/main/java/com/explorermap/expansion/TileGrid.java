@@ -1,5 +1,6 @@
 package com.explorermap.expansion;
 
+import com.explorermap.config.ExplorerMapConfig;
 import com.explorermap.data.ClientMapCache;
 import com.explorermap.data.MapEntryData;
 import com.explorermap.data.MapIdentity;
@@ -17,7 +18,7 @@ import java.util.Set;
 
 public final class TileGrid {
 
-    private static final int MAX_TILES = 256;
+    private static final Set<MapIdentity> TRUNCATION_REPORTED = new HashSet<>();
 
     public record TileEntry(
             MapIdentity mapId,
@@ -32,6 +33,10 @@ public final class TileGrid {
     private TileGrid() {}
 
     public List<TileEntry> tiles() { return tiles; }
+
+    public static void resetTruncationReports() {
+        TRUNCATION_REPORTED.clear();
+    }
 
     public boolean hasTileAt(int gridX, int gridZ) {
         for (TileEntry t : tiles) {
@@ -67,6 +72,9 @@ public final class TileGrid {
     }
 
     public static TileGrid build(MapIdentity rootMapId, MapItemSavedData rootState, MapEntryData rootEntry, ClientLevel world) {
+        int maxTiles = ExplorerMapConfig.get().expansionTileLimit();
+        boolean truncated = false;
+
         TileGrid grid = new TileGrid();
         grid.tiles.add(new TileEntry(rootMapId, rootState, rootEntry, 0, 0));
 
@@ -76,13 +84,12 @@ public final class TileGrid {
         Deque<TileEntry> queue = new ArrayDeque<>();
         queue.add(grid.tiles.get(0));
 
-        while (!queue.isEmpty() && grid.tiles.size() < MAX_TILES) {
+        while (!queue.isEmpty()) {
             TileEntry current = queue.removeFirst();
 
             for (ExpansionRecord exp : current.entry().getExpansions()) {
                 MapIdentity target = exp.target();
                 if (!visited.add(target)) continue;
-                if (grid.tiles.size() >= MAX_TILES) break;
 
                 if (!target.dimension().equals(world.dimension())) {
                     ExplorerMapMod.LOGGER.warn(
@@ -93,6 +100,11 @@ public final class TileGrid {
 
                 MapItemSavedData adjState = world.getMapData(new MapId(target.mapId()));
                 if (adjState == null) continue;
+
+                if (grid.tiles.size() >= maxTiles) {
+                    truncated = true;
+                    continue;
+                }
 
                 int gx = current.gridX(), gz = current.gridZ();
                 switch (exp.direction()) {
@@ -107,6 +119,13 @@ public final class TileGrid {
                 grid.tiles.add(adjTile);
                 queue.addLast(adjTile);
             }
+        }
+
+        if (truncated && TRUNCATION_REPORTED.add(rootMapId)) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] The expansion grid for map {} was limited to {} tiles; further expanded maps are not displayed. "
+                            + "The limit can be raised with the 'Max Expansion Tiles' setting.",
+                    rootMapId.asKey(), maxTiles);
         }
 
         return grid;

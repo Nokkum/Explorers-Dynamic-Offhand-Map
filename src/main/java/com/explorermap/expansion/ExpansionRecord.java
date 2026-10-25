@@ -15,15 +15,16 @@ public record ExpansionRecord(Direction direction, MapIdentity target, boolean h
         public static final Codec<Direction> CODEC =
                 Codec.STRING.xmap(Direction::valueOf, Direction::name);
 
+        private static final Direction[] VALUES = values();
+
         public static final StreamCodec<FriendlyByteBuf, Direction> PACKET_CODEC = StreamCodec.ofMember(
-                (Direction value, FriendlyByteBuf buf) -> buf.writeUtf(value.name()),
+                (Direction value, FriendlyByteBuf buf) -> buf.writeVarInt(value.ordinal()),
                 (FriendlyByteBuf buf) -> {
-                    String raw = buf.readUtf();
-                    try {
-                        return Direction.valueOf(raw);
-                    } catch (IllegalArgumentException e) {
-                        throw new DecoderException("Invalid ExpansionRecord.Direction: " + raw);
+                    int ordinal = buf.readVarInt();
+                    if (ordinal < 0 || ordinal >= VALUES.length) {
+                        throw new DecoderException("Invalid ExpansionRecord.Direction ordinal: " + ordinal);
                     }
+                    return VALUES[ordinal];
                 }
         );
     }

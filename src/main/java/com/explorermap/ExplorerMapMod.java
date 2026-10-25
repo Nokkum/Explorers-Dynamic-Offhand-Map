@@ -29,6 +29,7 @@ public class ExplorerMapMod implements ModInitializer {
         PayloadTypeRegistry.clientboundPlay().register(GrantExpansionPayload.TYPE,  GrantExpansionPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(SyncWaypointsPayload.TYPE,   SyncWaypointsPayload.CODEC);
         SyncDiscoveryPayload.Broadcast.registerCommon();
+        SyncDiscoveryPayload.Ack.registerCommon();
         ExpansionFailedPayload.registerCommon();
 
         RequestExpansionPayload.register();

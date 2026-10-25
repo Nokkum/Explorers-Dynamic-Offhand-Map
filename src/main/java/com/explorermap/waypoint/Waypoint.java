@@ -1,11 +1,14 @@
 package com.explorermap.waypoint;
 
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.regex.Pattern;
 
 public record Waypoint(UUID id,
                        String name,
@@ -16,6 +19,11 @@ public record Waypoint(UUID id,
                        String ownerUuid) {
 
     public static final String DEFAULT_ICON = "explorermap:pin";
+
+    public static final int MAX_NAME_LENGTH = 64;
+    public static final int MAX_ICON_ID_LENGTH = 128;
+    public static final int MAX_ID_LENGTH = 36;
+    public static final int MAX_OWNER_LENGTH = 36;
 
     public static final int DEFAULT_COLOR = 0xFFFFFFFF;
 
@@ -56,14 +64,32 @@ public record Waypoint(UUID id,
         }
     }
 
-    public static final Codec<Waypoint> CODEC = RecordCodecBuilder.create(instance ->
+    private static final Pattern OWNER_FORMAT =
+            Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+
+    private static Codec<String> boundedString(int maxLength) {
+        return Codec.STRING.comapFlatMap(value -> value.length() <= maxLength
+                ? DataResult.success(value)
+                : DataResult.error(() -> "String of " + value.length()
+                        + " characters exceeds the maximum of " + maxLength), Function.identity());
+    }
+
+    private static DataResult<Waypoint> validateOwner(Waypoint waypoint) {
+        String owner = waypoint.ownerUuid();
+        return owner == null || owner.isEmpty()
+                || (owner.length() <= MAX_OWNER_LENGTH && OWNER_FORMAT.matcher(owner).matches())
+                ? DataResult.success(waypoint)
+                : DataResult.error(() -> "Owner is not a canonical UUID string");
+    }
+
+    public static final Codec<Waypoint> CODEC = RecordCodecBuilder.<Waypoint>create(instance ->
             instance.group(
-                    Codec.STRING.optionalFieldOf("id", "")
+                    boundedString(MAX_ID_LENGTH).optionalFieldOf("id", "")
                             .forGetter(w -> w.id() == null ? "" : w.id().toString()),
-                    Codec.STRING.fieldOf("name").forGetter(Waypoint::name),
+                    boundedString(MAX_NAME_LENGTH).fieldOf("name").forGetter(Waypoint::name),
                     Codec.DOUBLE.fieldOf("world_x").forGetter(Waypoint::worldX),
                     Codec.DOUBLE.fieldOf("world_z").forGetter(Waypoint::worldZ),
-                    Codec.STRING.fieldOf("icon_id").forGetter(Waypoint::iconId),
+                    boundedString(MAX_ICON_ID_LENGTH).fieldOf("icon_id").forGetter(Waypoint::iconId),
                     Codec.INT.fieldOf("color").forGetter(Waypoint::color),
                     Codec.STRING.optionalFieldOf("owner_uuid", "")
                             .forGetter(Waypoint::ownerUuid)
@@ -72,30 +98,26 @@ public record Waypoint(UUID id,
                 if (id == null) id = UUID.randomUUID();
                 return new Waypoint(id, name, worldX, worldZ, iconId, color, ownerUuid);
             })
-    );
-
-    private static final int MAX_NETWORK_NAME_LENGTH = 64;
-    private static final int MAX_NETWORK_ICON_LENGTH = 128;
-    private static final int MAX_NETWORK_OWNER_LENGTH = 64;
+    ).comapFlatMap(Waypoint::validateOwner, Function.identity());
 
     public static final StreamCodec<FriendlyByteBuf, Waypoint> PACKET_CODEC = StreamCodec.ofMember(
             (Waypoint value, FriendlyByteBuf buf) -> {
                 buf.writeUUID(value.id());
-                buf.writeUtf(value.name(), MAX_NETWORK_NAME_LENGTH);
+                buf.writeUtf(value.name(), MAX_NAME_LENGTH);
                 buf.writeDouble(value.worldX());
                 buf.writeDouble(value.worldZ());
-                buf.writeUtf(value.iconId(), MAX_NETWORK_ICON_LENGTH);
+                buf.writeUtf(value.iconId(), MAX_ICON_ID_LENGTH);
                 buf.writeInt(value.color());
-                buf.writeUtf(value.ownerUuid() == null ? "" : value.ownerUuid(), MAX_NETWORK_OWNER_LENGTH);
+                buf.writeUtf(value.ownerUuid() == null ? "" : value.ownerUuid(), MAX_OWNER_LENGTH);
             },
             (FriendlyByteBuf buf) -> new Waypoint(
                     buf.readUUID(),
-                    buf.readUtf(MAX_NETWORK_NAME_LENGTH),
+                    buf.readUtf(MAX_NAME_LENGTH),
                     buf.readDouble(),
                     buf.readDouble(),
-                    buf.readUtf(MAX_NETWORK_ICON_LENGTH),
+                    buf.readUtf(MAX_ICON_ID_LENGTH),
                     buf.readInt(),
-                    buf.readUtf(MAX_NETWORK_OWNER_LENGTH)
+                    buf.readUtf(MAX_OWNER_LENGTH)
             )
     );
 }

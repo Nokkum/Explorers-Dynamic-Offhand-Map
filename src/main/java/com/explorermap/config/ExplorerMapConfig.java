@@ -10,6 +10,9 @@ import me.shedaniel.autoconfig.serializer.GsonConfigSerializer;
 @Config(name = ExplorerMapMod.MOD_ID)
 public class ExplorerMapConfig implements ConfigData {
 
+    public static final int MIN_EXPANSION_TILES = 16;
+    public static final int MAX_EXPANSION_TILES = 512;
+
     private static ExplorerMapConfig INSTANCE;
 
     public static void load() {
@@ -66,6 +69,14 @@ public class ExplorerMapConfig implements ConfigData {
 
     @ConfigEntry.BoundedDiscrete(min = 1, max = 8)
     public int expansionPaperCost = 1;
+
+    @ConfigEntry.Gui.Tooltip
+    @ConfigEntry.BoundedDiscrete(min = MIN_EXPANSION_TILES, max = MAX_EXPANSION_TILES)
+    public int maxExpansionTiles = 256;
+
+    public int expansionTileLimit() {
+        return Math.max(MIN_EXPANSION_TILES, Math.min(MAX_EXPANSION_TILES, maxExpansionTiles));
+    }
 
     @ConfigEntry.Gui.Tooltip
     public boolean showCompass = true;

@@ -45,6 +45,8 @@
   "text.autoconfig.explorermap.option.showExpansionArrows.tooltip": "Show directional arrows around the mini-map indicating where the coverage can be expanded.",
   "text.autoconfig.explorermap.option.expansionPaperCost": "Expansion Paper Cost",
   "text.autoconfig.explorermap.option.expansionPaperCost.tooltip": "Number of Paper items consumed per standard expansion (1–8).",
+  "text.autoconfig.explorermap.option.maxExpansionTiles": "Max Expansion Tiles",
+  "text.autoconfig.explorermap.option.maxExpansionTiles.tooltip": "Maximum number of expanded map tiles shown in the mini-map and full map (16–512, default 256). Expansions beyond this limit are not displayed, and a warning is logged when the limit is reached.",
   "text.autoconfig.explorermap.option.showCompass": "Show Compass",
   "text.autoconfig.explorermap.option.showCompass.tooltip": "Show a compass rose overlay on the mini-map.",
   "text.autoconfig.explorermap.option.showCoordinates": "Show Coordinates",
