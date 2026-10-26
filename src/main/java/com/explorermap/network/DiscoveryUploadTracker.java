@@ -36,7 +36,7 @@ public final class DiscoveryUploadTracker<K> {
     }
 
     public void acknowledge(K key, long generation) {
-        acknowledged.put(key, generation);
+        acknowledged.merge(key, generation, Math::max);
         Pending current = pending.get(key);
         if (current != null && current.generation() == generation) pending.remove(key);
     }

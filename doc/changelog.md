@@ -1,5 +1,23 @@
 <h1 align="center"> Changelog </h1>
 
+# v2.2.1
+1. `hasSynced()`, a flaw introduced by the previous update.
+  - `broadcastTo` sent to any player whose synced set contained the map, even if their held map no longer reached it.
+  - The exposure is small. `visibleWaypoints` still filters per waypoint, so only system waypoints, the player's own and ones shared with them could go out. System waypoints come from everyone's combined discovery, though, so it was still a real leak and the wrong principle.
+  - Fix: broadcasts now require current access through `isAccessibleFrom` on the player's held map, and `hasSynced()` is removed.
+  - When a player has no current access, their cached copy of that map is marked stale. The next family sync resends it, so their client doesn't keep an out-of-date copy.
+
+2. non-monotonic acks:
+  - The strict out-of-order case can't happen, because acks arrive in the order the server processes uploads.
+  - It can happen through a retry: the server acks both copies of a retried upload, a server broadcast then bumps the client's generation, and the second, older ack arrives afterwards and moves the stored value backwards.
+  - That caused a redundant upload.
+  - Fix: the stored acknowledged generation now only moves forward.
+
+3. the 256-map limit: 
+  - The server logs a warning once per player and map when a family is cut off. The old check could also warn when nothing was actually cut off; fixed that.
+  - The `maxExpansionTiles` tooltip now says the server synchronizes at most 256 maps per family.
+  - I kept the limit at 256.
+
 # v2.2.0
 1. A new `SyncExpansionsPayload`, plus `ExpansionFamilySync` on the server. When a player's held map changes or they join, the server walks the expansion family (visited set, 256-map cap, same traversal as the client grid) and sends the expansion links. It sends each map's waypoints and non-empty discovery once per session. Expanding also triggers this for the requester and for anyone whose held map reaches the expanded map.
 2. `broadcastTo` now also sends to players whose held map reaches the changed map via `isAccessibleFrom`, and to players who already have that map synced. I added that second condition because each map is sent once per session, so a client that already holds a map must keep getting its updates.

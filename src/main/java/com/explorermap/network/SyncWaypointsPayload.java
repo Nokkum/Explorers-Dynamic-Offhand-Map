@@ -64,8 +64,10 @@ public record SyncWaypointsPayload(
     public static void broadcastTo(MinecraftServer server, MapIdentity mapId) {
         var savedData = ExplorerMapSavedData.get(server);
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            if (ExpansionFamilySync.hasSynced(p.getUUID(), mapId) || canViewFromHeldMap(savedData, p, mapId)) {
+            if (canViewFromHeldMap(savedData, p, mapId)) {
                 sendTo(p, mapId);
+            } else {
+                ExpansionFamilySync.invalidate(p.getUUID(), mapId);
             }
         }
     }

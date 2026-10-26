@@ -25,12 +25,16 @@ public final class ExpansionFamilySync {
     public static final int MAX_FAMILY_MAPS = 256;
 
     private static final Map<UUID, Set<MapIdentity>> SYNCED = new ConcurrentHashMap<>();
+    private static final Map<UUID, Set<MapIdentity>> TRUNCATION_REPORTED = new ConcurrentHashMap<>();
 
     private ExpansionFamilySync() {}
 
-    public static List<MapIdentity> familyOf(ExplorerMapSavedData savedData, MapIdentity root) {
+    public record Family(List<MapIdentity> maps, boolean truncated) {}
+
+    public static Family familyOf(ExplorerMapSavedData savedData, MapIdentity root) {
         Set<MapIdentity> visited = new LinkedHashSet<>();
         Deque<MapIdentity> pending = new ArrayDeque<>();
+        boolean truncated = false;
         visited.add(root);
         pending.addLast(root);
 
@@ -40,21 +44,33 @@ public final class ExpansionFamilySync {
             if (entry == null) continue;
 
             for (ExpansionRecord record : entry.getExpansions()) {
-                if (visited.size() >= MAX_FAMILY_MAPS) return List.copyOf(visited);
                 MapIdentity target = record.target();
-                if (!target.dimension().equals(current.dimension())) continue;
-                if (visited.add(target)) pending.addLast(target);
+                if (!target.dimension().equals(current.dimension()) || visited.contains(target)) continue;
+                if (visited.size() >= MAX_FAMILY_MAPS) {
+                    truncated = true;
+                    continue;
+                }
+                visited.add(target);
+                pending.addLast(target);
             }
         }
-        return List.copyOf(visited);
+        return new Family(List.copyOf(visited), truncated);
     }
 
     public static void sendTo(MinecraftServer server, ServerPlayer player, MapIdentity root) {
         ExplorerMapSavedData savedData = ExplorerMapSavedData.get(server);
-        List<MapIdentity> family = familyOf(savedData, root);
+        Family family = familyOf(savedData, root);
+        UUID playerId = player.getUUID();
+
+        if (family.truncated()
+                && TRUNCATION_REPORTED.computeIfAbsent(playerId, id -> ConcurrentHashMap.newKeySet()).add(root)) {
+            ExplorerMapMod.LOGGER.warn(
+                    "[ExplorerMap] The expansion family of map {} has more than {} maps; only the first {} are synchronized to {}",
+                    root.asKey(), MAX_FAMILY_MAPS, MAX_FAMILY_MAPS, player.getName().getString());
+        }
 
         List<SyncExpansionsPayload.Entry> entries = new ArrayList<>();
-        for (MapIdentity mapId : family) {
+        for (MapIdentity mapId : family.maps()) {
             MapEntryData entry = savedData.get(mapId);
             if (entry == null) continue;
             List<ExpansionRecord> expansions = entry.getExpansions();
@@ -64,11 +80,10 @@ public final class ExpansionFamilySync {
             ServerPlayNetworking.send(player, new SyncExpansionsPayload(root, entries));
         }
 
-        UUID playerId = player.getUUID();
         Set<MapIdentity> synced = SYNCED.computeIfAbsent(playerId, id -> ConcurrentHashMap.newKeySet());
         synced.add(root);
 
-        for (MapIdentity mapId : family) {
+        for (MapIdentity mapId : family.maps()) {
             if (synced.contains(mapId)) continue;
             MapEntryData entry = savedData.get(mapId);
             if (entry == null || MapIdentity.resolveAndVerify(server, mapId) == null) continue;
@@ -95,13 +110,14 @@ public final class ExpansionFamilySync {
         }
     }
 
-    public static boolean hasSynced(UUID playerId, MapIdentity mapId) {
+    public static void invalidate(UUID playerId, MapIdentity mapId) {
         Set<MapIdentity> synced = SYNCED.get(playerId);
-        return synced != null && synced.contains(mapId);
+        if (synced != null) synced.remove(mapId);
     }
 
     public static void forget(UUID playerId) {
         SYNCED.remove(playerId);
+        TRUNCATION_REPORTED.remove(playerId);
     }
 
     private static MapIdentity heldRoot(ServerPlayer player) {
