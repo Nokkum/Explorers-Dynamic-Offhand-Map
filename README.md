@@ -13,5 +13,5 @@ The Explorer's Dynamic Offhand Map is Licensed under the [Apache 2.0 License](ht
 <details>
 <summary>.</summary>
 
-[https://deepwiki.com/badge.svg](https://deepwiki.com/Nokkum/Explorers-Dynamic-Offhand-Map)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Nokkum/Explorers-Dynamic-Offhand-Map)
 </details>
