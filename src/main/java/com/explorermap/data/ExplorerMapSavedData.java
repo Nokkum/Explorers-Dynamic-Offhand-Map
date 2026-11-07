@@ -10,11 +10,12 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.saveddata.SavedDataType;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.ArrayDeque;
+import java.util.Collection;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -30,18 +31,32 @@ public class ExplorerMapSavedData extends SavedData {
     private static final int MAX_TILE_ROWS = 20_000;
     private static final int MAX_SHARE_ROWS = 100_000;
     private static final int MAX_DISCOVERY_ROWS = 100_000;
+    private static final int MAX_ALLOWANCE_ROWS = 100_000;
 
     private final Map<MapIdentity, MapEntryData> entries = new HashMap<>();
     private final Map<TileKey, MapIdentity> tileIndex = new HashMap<>();
     private final Map<MapIdentity, Map<String, Set<UUID>>> waypointShares = new HashMap<>();
     private final Map<MapIdentity, Map<String, byte[]>> playerDiscoveries = new HashMap<>();
+    // Per-player waypoint slots and share charges, keyed by the root map the compass was inserted into.
+    private final Map<MapIdentity, Map<String, Allowance>> allowances = new HashMap<>();
+
+    private static final class Allowance {
+        int capacity;
+        int shareCharges;
+
+        Allowance(int capacity, int shareCharges) {
+            this.capacity = Math.max(0, capacity);
+            this.shareCharges = Math.max(0, shareCharges);
+        }
+    }
 
     public ExplorerMapSavedData() {}
 
     private ExplorerMapSavedData(Map<MapIdentity, MapEntryData> entries,
                                  Map<TileKey, MapIdentity> tileIndex,
                                  Map<MapIdentity, Map<String, Set<UUID>>> waypointShares,
-                                 Map<MapIdentity, Map<String, byte[]>> playerDiscoveries) {
+                                 Map<MapIdentity, Map<String, byte[]>> playerDiscoveries,
+                                 Map<MapIdentity, Map<String, Allowance>> allowances) {
         this.entries.putAll(entries);
         this.tileIndex.putAll(tileIndex);
         waypointShares.forEach((mapId, recipients) -> this.waypointShares.put(
@@ -53,6 +68,7 @@ public class ExplorerMapSavedData extends SavedData {
             players.forEach((uuid, bits) -> copied.put(uuid, bits.clone()));
             this.playerDiscoveries.put(mapId, copied);
         });
+        allowances.forEach((mapId, players) -> this.allowances.put(mapId, new HashMap<>(players)));
     }
 
     public MapEntryData getOrCreate(MapIdentity mapId) {
@@ -101,8 +117,17 @@ public class ExplorerMapSavedData extends SavedData {
         return result;
     }
 
+    private record MergeResult(boolean playerChanged, Set<Integer> aggregateDelta) {
+        static final MergeResult NONE = new MergeResult(false, Set.of());
+    }
+
+    /** @return pixels newly discovered by anyone (the aggregate delta). */
     public Set<Integer> mergePlayerBitmask(MapIdentity mapId, UUID playerId, byte[] bitmask) {
-        if (playerId == null || bitmask == null) return Set.of();
+        return merge(mapId, playerId, bitmask).aggregateDelta();
+    }
+
+    private MergeResult merge(MapIdentity mapId, UUID playerId, byte[] bitmask) {
+        if (playerId == null || bitmask == null) return MergeResult.NONE;
 
         byte[] aggregateBefore = aggregateDiscoveredPixels(mapId);
 
@@ -123,7 +148,7 @@ public class ExplorerMapSavedData extends SavedData {
         boolean legacyChanged = getOrCreate(mapId).mergeBitmask(bitmask);
         if (changed || legacyChanged) setDirty();
 
-        if (!changed) return Set.of();
+        if (!changed) return MergeResult.NONE;
 
         byte[] aggregateAfter = aggregateDiscoveredPixels(mapId);
         Set<Integer> newlyDiscovered = new HashSet<>();
@@ -134,13 +159,14 @@ public class ExplorerMapSavedData extends SavedData {
                 if ((delta & (1 << bit)) != 0) newlyDiscovered.add(i * 8 + bit);
             }
         }
-        return newlyDiscovered;
+        return new MergeResult(true, newlyDiscovered);
     }
 
+    /** @return true if the recipient's own discovery changed (even if others had already found those pixels). */
     public boolean sharePlayerDiscovery(MapIdentity mapId, UUID from, UUID recipient) {
         if (from == null || recipient == null) return false;
         byte[] source = getPlayerDiscovery(mapId, from);
-        return !mergePlayerBitmask(mapId, recipient, source).isEmpty();
+        return merge(mapId, recipient, source).playerChanged();
     }
 
     public void addExpansion(MapIdentity mapId, ExpansionRecord record) {
@@ -160,17 +186,70 @@ public class ExplorerMapSavedData extends SavedData {
         setDirty();
     }
 
-    public boolean addWaypointCapacity(MapIdentity mapId) {
-        getOrCreate(mapId).addWaypointCapacity();
+    private Allowance allowanceOf(MapIdentity root, UUID player) {
+        if (root == null || player == null) return null;
+        Map<String, Allowance> players = allowances.get(root);
+        return players == null ? null : players.get(player.toString());
+    }
+
+    public int waypointCapacity(MapIdentity root, UUID player) {
+        Allowance a = allowanceOf(root, player);
+        return a == null ? 0 : a.capacity;
+    }
+
+    public int waypointShareCharges(MapIdentity root, UUID player) {
+        Allowance a = allowanceOf(root, player);
+        return a == null ? 0 : a.shareCharges;
+    }
+
+    public void addWaypointCapacity(MapIdentity root, UUID player) {
+        if (root == null || player == null) return;
+        allowances.computeIfAbsent(root, ignored -> new HashMap<>())
+                .computeIfAbsent(player.toString(), ignored -> new Allowance(0, 0));
+        Allowance a = allowanceOf(root, player);
+        a.capacity += 5;
+        a.shareCharges++;
+        setDirty();
+    }
+
+    public boolean consumeWaypointShareCharge(MapIdentity root, UUID player) {
+        Allowance a = allowanceOf(root, player);
+        if (a == null || a.shareCharges <= 0) return false;
+        a.shareCharges--;
         setDirty();
         return true;
     }
 
-    public boolean consumeWaypointShareCharge(MapIdentity mapId) {
-        MapEntryData entry = get(mapId);
-        if (entry == null || !entry.consumeWaypointShareCharge()) return false;
+    /** Waypoints owned by the player across the given maps (a root map and its expansion tiles). */
+    public int ownedWaypointCount(Collection<MapIdentity> maps, UUID player) {
+        int count = 0;
+        for (MapIdentity id : maps) {
+            MapEntryData entry = get(id);
+            if (entry == null) continue;
+            for (Waypoint wp : entry.getWaypoints()) {
+                if (wp.isOwnedBy(player)) count++;
+            }
+        }
+        return count;
+    }
+
+    public boolean isWaypointSharedWith(MapIdentity mapId, UUID waypointId, UUID recipientId) {
+        if (recipientId == null) return false;
+        return waypointShares.getOrDefault(mapId, Map.of())
+                .getOrDefault(recipientId.toString(), Set.of()).contains(waypointId);
+    }
+
+    public boolean addPendingStructureChunk(MapIdentity mapId, long chunkPosLong) {
+        boolean ok = getOrCreate(mapId).addPendingStructureChunk(chunkPosLong);
         setDirty();
-        return true;
+        return ok;
+    }
+
+    public void removePendingStructureChunk(MapIdentity mapId, long chunkPosLong) {
+        MapEntryData entry = get(mapId);
+        if (entry == null) return;
+        entry.removePendingStructureChunk(chunkPosLong);
+        setDirty();
     }
 
     public void removeWaypoint(MapIdentity mapId, UUID waypointId) {
@@ -179,12 +258,14 @@ public class ExplorerMapSavedData extends SavedData {
         setDirty();
     }
 
-    public boolean canManageWaypoint(MapIdentity mapId, UUID waypointId, UUID playerId) {
+    /** Owners manage their waypoints; admins can additionally manage system and legacy ones. */
+    public boolean canManageWaypoint(MapIdentity mapId, UUID waypointId, UUID playerId, boolean admin) {
         var entry = get(mapId);
         if (entry == null || playerId == null) return false;
 
         Waypoint wp = entry.findWaypoint(waypointId);
-        return wp != null && wp.isOwnedBy(playerId);
+        if (wp == null) return false;
+        return wp.isOwnedBy(playerId) || (admin && wp.isSystemOrLegacy());
     }
 
     public boolean grantWaypointShare(MapIdentity mapId, UUID waypointId, UUID recipientId) {
@@ -315,28 +396,37 @@ public class ExplorerMapSavedData extends SavedData {
                         MapIdentity.CODEC.fieldOf("map_id").forGetter(DiscoveryRow::mapId),
                         CodecUtil.boundedString(CodecUtil.MAX_UUID_STRING_LENGTH)
                                 .fieldOf("player_uuid").forGetter(DiscoveryRow::playerUuid),
-                        CodecUtil.boundedList(Codec.BYTE, MapEntryData.BYTE_COUNT, "bitmask").xmap(
-                                list -> {
+                        // Byte array on disk (older saves used a list of bytes, which still decodes).
+                        Codec.BYTE_BUFFER.xmap(
+                                buffer -> {
                                     byte[] result = new byte[MapEntryData.BYTE_COUNT];
-                                    for (int i = 0; i < Math.min(result.length, list.size()); i++) {
-                                        result[i] = list.get(i);
-                                    }
+                                    ByteBuffer view = buffer.duplicate();
+                                    view.get(result, 0, Math.min(result.length, view.remaining()));
                                     return result;
                                 },
-                                bytes -> {
-                                    List<Byte> result = new ArrayList<>(bytes.length);
-                                    for (byte value : bytes) result.add(value);
-                                    return result;
-                                }
+                                bytes -> ByteBuffer.wrap(bytes.clone())
                         ).fieldOf("bitmask").forGetter(DiscoveryRow::bitmask)
                 ).apply(instance, DiscoveryRow::new)
+        );
+    }
+
+    private record AllowanceRow(MapIdentity mapId, String playerUuid, int capacity, int shareCharges) {
+        static final Codec<AllowanceRow> CODEC = RecordCodecBuilder.create(instance ->
+                instance.group(
+                        MapIdentity.CODEC.fieldOf("map_id").forGetter(AllowanceRow::mapId),
+                        CodecUtil.boundedString(CodecUtil.MAX_UUID_STRING_LENGTH)
+                                .fieldOf("player_uuid").forGetter(AllowanceRow::playerUuid),
+                        Codec.INT.fieldOf("capacity").forGetter(AllowanceRow::capacity),
+                        Codec.INT.fieldOf("share_charges").forGetter(AllowanceRow::shareCharges)
+                ).apply(instance, AllowanceRow::new)
         );
     }
 
     private record SaveShape(List<EntryRow> entries,
                              List<TileRow> tiles,
                              List<ShareRow> shares,
-                             List<DiscoveryRow> discoveries) {}
+                             List<DiscoveryRow> discoveries,
+                             List<AllowanceRow> allowances) {}
 
     private static final Codec<SaveShape> SHAPE_CODEC = RecordCodecBuilder.create(instance ->
             instance.group(
@@ -349,7 +439,10 @@ public class ExplorerMapSavedData extends SavedData {
                             .forGetter(SaveShape::shares),
                     CodecUtil.boundedList(DiscoveryRow.CODEC, MAX_DISCOVERY_ROWS, "player_discoveries")
                             .optionalFieldOf("player_discoveries", List.of())
-                            .forGetter(SaveShape::discoveries)
+                            .forGetter(SaveShape::discoveries),
+                    CodecUtil.boundedList(AllowanceRow.CODEC, MAX_ALLOWANCE_ROWS, "waypoint_allowances")
+                            .optionalFieldOf("waypoint_allowances", List.of())
+                            .forGetter(SaveShape::allowances)
             ).apply(instance, SaveShape::new)
     );
 
@@ -392,7 +485,34 @@ public class ExplorerMapSavedData extends SavedData {
                             .put(row.playerUuid(), row.bitmask().clone());
                 }
 
-                return new ExplorerMapSavedData(entryMap, tileMap, shareMap, discoveryMap);
+                Map<MapIdentity, Map<String, Allowance>> allowanceMap = new HashMap<>();
+                for (AllowanceRow row : shape.allowances()) {
+                    if (parseUuidOrNull(row.playerUuid()) == null) continue;
+                    allowanceMap.computeIfAbsent(row.mapId(), ignored -> new HashMap<>())
+                            .put(row.playerUuid(), new Allowance(row.capacity(), row.shareCharges()));
+                }
+
+                // Saves from before per-player allowances stored one shared pool per map.
+                // Every current waypoint owner on that map keeps the full pool, as they could use it before.
+                entryMap.forEach((mapId, entry) -> {
+                    if (entry.getWaypointCapacity() > 0 || entry.getWaypointShareCharges() > 0) {
+                        Set<String> owners = new HashSet<>();
+                        for (Waypoint wp : entry.getWaypoints()) {
+                            if (!wp.isSystemOrLegacy() && parseUuidOrNull(wp.ownerUuid()) != null) {
+                                owners.add(wp.ownerUuid());
+                            }
+                        }
+                        Map<String, Allowance> perPlayer =
+                                allowanceMap.computeIfAbsent(mapId, ignored -> new HashMap<>());
+                        for (String owner : owners) {
+                            perPlayer.putIfAbsent(owner,
+                                    new Allowance(entry.getWaypointCapacity(), entry.getWaypointShareCharges()));
+                        }
+                    }
+                    entry.clearLegacyAllowance();
+                });
+
+                return new ExplorerMapSavedData(entryMap, tileMap, shareMap, discoveryMap, allowanceMap);
             },
             data -> {
                 List<EntryRow> entryRows = new ArrayList<>(data.entries.size());
@@ -408,7 +528,11 @@ public class ExplorerMapSavedData extends SavedData {
                 data.playerDiscoveries.forEach((mapId, players) ->
                         players.forEach((playerUuid, bitmask) ->
                                 discoveryRows.add(new DiscoveryRow(mapId, playerUuid, bitmask.clone()))));
-                return new SaveShape(entryRows, tileRows, shareRows, discoveryRows);
+                List<AllowanceRow> allowanceRows = new ArrayList<>();
+                data.allowances.forEach((mapId, players) ->
+                        players.forEach((playerUuid, a) ->
+                                allowanceRows.add(new AllowanceRow(mapId, playerUuid, a.capacity, a.shareCharges))));
+                return new SaveShape(entryRows, tileRows, shareRows, discoveryRows, allowanceRows);
             }
     );
 

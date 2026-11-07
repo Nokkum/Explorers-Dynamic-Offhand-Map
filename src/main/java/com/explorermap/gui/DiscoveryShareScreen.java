@@ -4,7 +4,7 @@ import com.explorermap.data.MapIdentity;
 import com.explorermap.network.ShareDiscoveryPayload;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import com.explorermap.network.ClientNet;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.components.Button;
@@ -46,7 +46,7 @@ public final class DiscoveryShareScreen extends Screen {
     private void share() {
         String target = playerName.getValue().trim();
         if (target.isEmpty()) return;
-        ClientPlayNetworking.send(new ShareDiscoveryPayload(mapId, target));
+        ClientNet.send(new ShareDiscoveryPayload(mapId, target));
         minecraft.gui.setScreen(parent);
     }
 

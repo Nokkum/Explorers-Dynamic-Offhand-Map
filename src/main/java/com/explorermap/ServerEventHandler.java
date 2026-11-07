@@ -3,6 +3,9 @@ package com.explorermap;
 import com.explorermap.data.ExplorerMapSavedData;
 import com.explorermap.data.MapIdentity;
 import com.explorermap.network.ExpansionFamilySync;
+import com.explorermap.network.RejectLog;
+import com.explorermap.network.RequestExpansionPayload;
+import com.explorermap.network.TileColorSync;
 import com.explorermap.network.SyncWaypointsPayload;
 import com.explorermap.network.SyncDiscoveryPayload;
 import com.explorermap.structure.StructureWaypointDetector;
@@ -40,12 +43,16 @@ public final class ServerEventHandler {
             LAST_OFFHAND_MAP.remove(playerId);
             SyncDiscoveryPayload.forgetPlayer(playerId);
             ExpansionFamilySync.forget(playerId);
+            RequestExpansionPayload.forgetPlayer(playerId);
+            RejectLog.forget(playerId);
+            TileColorSync.forget(playerId);
         });
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (++offHandCheckCounter >= OFFHAND_CHECK_INTERVAL_TICKS) {
                 offHandCheckCounter = 0;
                 checkOffHandChanges(server);
             }
+            TileColorSync.tick(server);
             if (++pendingRetryCounter >= PENDING_STRUCTURE_RETRY_INTERVAL_TICKS) {
                 pendingRetryCounter = 0;
                 retryPendingStructureChunks(server);

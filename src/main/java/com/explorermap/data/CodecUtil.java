@@ -36,17 +36,26 @@ public final class CodecUtil {
                 return ops.getList(input).flatMap(elements -> {
                     List<A> result = new ArrayList<>();
                     int[] totalSeen = {0};
+                    int[] invalid = {0};
 
                     elements.accept(rawElement -> {
                         totalSeen[0]++;
                         if (result.size() >= maxSize) return; // cap already reached - skip decoding entirely
                         elementCodec.parse(ops, rawElement)
-                                .resultOrPartial(err -> ExplorerMapMod.LOGGER.debug(
-                                        "[ExplorerMap] Skipping an invalid '{}' entry while loading: {}",
-                                        label, err))
+                                .resultOrPartial(err -> {
+                                    invalid[0]++;
+                                    ExplorerMapMod.LOGGER.debug(
+                                            "[ExplorerMap] Skipping an invalid '{}' entry while loading: {}",
+                                            label, err);
+                                })
                                 .ifPresent(result::add);
                     });
 
+                    if (invalid[0] > 0) {
+                        ExplorerMapMod.LOGGER.warn(
+                                "[ExplorerMap] Skipped {} invalid '{}' entries while loading; "
+                                        + "they will be gone after the next save.", invalid[0], label);
+                    }
                     if (totalSeen[0] > maxSize) {
                         ExplorerMapMod.LOGGER.warn(
                                 "[ExplorerMap] Saved data has {} '{}' entries, more than the maximum of {} - "

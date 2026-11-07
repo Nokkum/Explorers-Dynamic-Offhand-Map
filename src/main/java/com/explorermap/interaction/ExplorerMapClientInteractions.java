@@ -23,9 +23,10 @@ public final class ExplorerMapClientInteractions {
 
     public static void register() {
         UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
-            if (world.getBlockState(hit.getBlockPos()).is(Blocks.CARTOGRAPHY_TABLE)
-                    && hand == InteractionHand.OFF_HAND
-                    && ExplorerMapMod.isFilledMap(player.getItemInHand(hand))) {
+            // The main hand comes first and would open the vanilla table, so the off-hand map claims it.
+            if (world.isClientSide()
+                    && world.getBlockState(hit.getBlockPos()).is(Blocks.CARTOGRAPHY_TABLE)
+                    && ExplorerMapMod.isFilledMap(player.getItemInHand(InteractionHand.OFF_HAND))) {
                 ExplorerMapClient.openCartographyTable(hit.getBlockPos());
                 return InteractionResult.SUCCESS;
             }

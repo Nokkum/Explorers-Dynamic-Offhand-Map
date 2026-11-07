@@ -34,14 +34,15 @@ public record InsertWaypointCapacityPayload(BlockPos tablePos) implements Custom
     public static void register() {
         PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC);
         ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) ->
-                context.server().execute(() -> handleOnServer(context.player(), payload)));
+                handleOnServer(context.player(), payload));
     }
 
     private static void handleOnServer(ServerPlayer player,
                                        InsertWaypointCapacityPayload payload) {
-        if (!player.level().getBlockState(payload.tablePos()).is(Blocks.CARTOGRAPHY_TABLE)
-                || player.distanceToSqr(payload.tablePos().getX() + 0.5, payload.tablePos().getY() + 0.5,
-                        payload.tablePos().getZ() + 0.5) > 64.0) {
+        // Distance first: the position is client-supplied and must not make the server look at far-away chunks.
+        if (player.distanceToSqr(payload.tablePos().getX() + 0.5, payload.tablePos().getY() + 0.5,
+                payload.tablePos().getZ() + 0.5) > ExplorerMapMod.TABLE_REACH_SQR
+                || !player.level().getBlockState(payload.tablePos()).is(Blocks.CARTOGRAPHY_TABLE)) {
             return;
         }
 
@@ -60,7 +61,7 @@ public record InsertWaypointCapacityPayload(BlockPos tablePos) implements Custom
         if (compassSlot < 0) return;
 
         player.getInventory().getItem(compassSlot).shrink(1);
-        ExplorerMapSavedData.get(player.level().getServer()).addWaypointCapacity(mapId);
+        ExplorerMapSavedData.get(player.level().getServer()).addWaypointCapacity(mapId, player.getUUID());
         SyncWaypointsPayload.sendTo(player, mapId);
     }
 }

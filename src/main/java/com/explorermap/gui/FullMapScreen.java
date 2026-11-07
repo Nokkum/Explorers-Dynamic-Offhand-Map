@@ -10,20 +10,24 @@ import com.explorermap.expansion.MultiTileCanvas;
 import com.explorermap.expansion.TileGrid;
 import com.explorermap.hud.TileRenderer;
 import com.explorermap.hud.WaypointIconRenderer;
+import com.explorermap.network.ClientNet;
 import com.explorermap.network.DeleteWaypointPayload;
 import com.explorermap.network.RequestExpansionPayload;
 import com.explorermap.waypoint.Waypoint;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Environment(EnvType.CLIENT)
 public class FullMapScreen extends Screen {
@@ -48,6 +52,8 @@ public class FullMapScreen extends Screen {
     private Waypoint contextMenuWaypoint;
     private MapIdentity contextMenuMapId;
     private int contextMenuX, contextMenuY;
+    private int lastSignature = Integer.MIN_VALUE;
+    private int tickCounter;
 
     public FullMapScreen() {
         this(null);
@@ -62,59 +68,104 @@ public class FullMapScreen extends Screen {
     private int canvasX()    { return (this.width  - canvasSize()) / 2; }
     private int canvasY()    { return (this.height - canvasSize()) / 2; }
 
+    private record Tool(Component label, int width, Button.OnPress press, boolean active) {}
+
+    /** Only the map in the off-hand can be changed: the server authorizes everything against it. */
+    private boolean interactive() {
+        if (minecraft == null || minecraft.player == null || minecraft.level == null) return false;
+        if (forcedMapId == null) return mapId != null;
+        ItemStack off = minecraft.player.getItemInHand(InteractionHand.OFF_HAND);
+        if (!ExplorerMapMod.isFilledMap(off)) return false;
+        return forcedMapId.equals(MapIdentity.ofStack(off, minecraft.level));
+    }
+
     @Override
     protected void init() {
         super.init();
         resolveMap();
 
-        int cx    = canvasX();
-        int toolY = canvasY() - 24;
-        int size  = canvasSize();
-
+        boolean interactive = interactive();
+        BlockPos table = interactive && minecraft.player != null
+                ? ExpansionHandler.findNearbyTable(minecraft.player) : null;
         boolean hasResources = minecraft.player != null && ExpansionHandler.canExpand(minecraft.player, hdMode);
-        for (ExpansionRecord.Direction dir : ExpansionRecord.Direction.values()) {
-            boolean done   = minecraft.player != null && ExpansionHandler.alreadyExpanded(minecraft.player, dir);
-            boolean active = hasResources && !done;
-            String label = switch (dir) {
-                case NORTH -> done ? "OK N" : "^ N";
-                case SOUTH -> done ? "OK S" : "v S";
-                case WEST  -> done ? "OK W" : "< W";
-                case EAST  -> done ? "OK E" : "> E";
-            };
-            int offset = switch (dir) {
-                case NORTH -> 0; case SOUTH -> 50; case WEST -> 100; case EAST -> 150;
-            };
-            var btn = Button.builder(Component.literal(label),
-                    b -> { if (!done) expand(dir, hdMode); })
-                    .bounds(cx + offset, toolY, 46, 20).build();
-            btn.active = active || done;
-            addRenderableWidget(btn);
+
+        List<Tool> tools = new ArrayList<>();
+        if (interactive) {
+            for (ExpansionRecord.Direction dir : ExpansionRecord.Direction.values()) {
+                boolean done = minecraft.player != null && ExpansionHandler.alreadyExpanded(minecraft.player, dir);
+                tools.add(new Tool(GuiText.expandLabel(dir, done), 46,
+                        b -> expand(dir, hdMode), table != null && hasResources && !done));
+            }
+            tools.add(new Tool(GuiText.hdToggle(hdMode), 32, btn -> {
+                FullMapScreen next = new FullMapScreen(forcedMapId);
+                next.hdMode = !this.hdMode;
+                next.zoom   = this.zoom;
+                next.panX   = this.panX;
+                next.panY   = this.panY;
+                if (minecraft != null) minecraft.gui.setScreen(next);
+            }, true));
+        }
+        tools.add(new Tool(Component.literal("+"), 20, btn -> adjustZoom(+0.25f), true));
+        tools.add(new Tool(Component.literal("-"), 20, btn -> adjustZoom(-0.25f), true));
+        tools.add(new Tool(Component.literal("1:1"), 30, btn -> { zoom = 1f; panX = 0; panY = 0; }, true));
+        if (interactive) {
+            Component addLabel = Component.translatable("label.explorermap.add_waypoint");
+            tools.add(new Tool(addLabel, font.width(addLabel.getString()) + 12,
+                    btn -> minecraft.gui.setScreen(new WaypointEditScreen(this)), true));
+            Component shareLabel = Component.translatable("label.explorermap.share_discovery");
+            tools.add(new Tool(shareLabel, font.width(shareLabel.getString()) + 12,
+                    btn -> minecraft.gui.setScreen(new DiscoveryShareScreen(this, mapId)), true));
+        }
+        tools.add(new Tool(Component.literal("X"), 20, btn -> this.onClose(), true));
+
+        // Wrap the toolbar onto further rows instead of running off the screen at high GUI scales.
+        int margin = 4, gap = 4, rowHeight = 22;
+        int startX = Math.max(margin, canvasX());
+        int[] xs = new int[tools.size()];
+        int[] rows = new int[tools.size()];
+        int x = startX, row = 0;
+        for (int i = 0; i < tools.size(); i++) {
+            int w = tools.get(i).width();
+            if (x > startX && x + w > this.width - margin) {
+                x = startX;
+                row++;
+            }
+            xs[i] = x;
+            rows[i] = row;
+            x += w + gap;
+        }
+        int topY = Math.max(2, canvasY() - 4 - (row + 1) * rowHeight + 2);
+        for (int i = 0; i < tools.size(); i++) {
+            Tool tool = tools.get(i);
+            Button button = Button.builder(tool.label(), tool.press())
+                    .bounds(xs[i], topY + rows[i] * rowHeight, tool.width(), 20).build();
+            button.active = tool.active();
+            addRenderableWidget(button);
         }
 
-        addRenderableWidget(Button.builder(
-                Component.literal(hdMode ? "[HD]" : " HD "),
-                btn -> {
-                    FullMapScreen next = new FullMapScreen();
-                    next.hdMode = !this.hdMode;
-                    next.zoom   = this.zoom;
-                    next.panX   = this.panX;
-                    next.panY   = this.panY;
-                    if (minecraft != null) minecraft.gui.setScreen(next);
-                }
-        ).bounds(cx + 200, toolY, 32, 20).build());
+        lastSignature = signature();
+    }
 
-        addRenderableWidget(Button.builder(Component.literal("+"),   btn -> adjustZoom(+0.25f)).bounds(cx + 238, toolY, 20, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("-"),   btn -> adjustZoom(-0.25f)).bounds(cx + 260, toolY, 20, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("1:1"), btn -> { zoom = 1f; panX = 0; panY = 0; }).bounds(cx + 282, toolY, 30, 20).build());
+    /** What the toolbar's enabled states depend on, so it can be rebuilt when that changes. */
+    private int signature() {
+        if (minecraft == null || minecraft.player == null) return -1;
+        int signature = interactive() ? 1 : 0;
+        if (ExpansionHandler.canExpand(minecraft.player, hdMode)) signature |= 2;
+        if (ExpansionHandler.findNearbyTable(minecraft.player) != null) signature |= 4;
+        for (ExpansionRecord.Direction dir : ExpansionRecord.Direction.values()) {
+            if (ExpansionHandler.alreadyExpanded(minecraft.player, dir)) signature |= 8 << dir.ordinal();
+        }
+        return signature;
+    }
 
-        addRenderableWidget(Button.builder(Component.literal("+ Waypoint"),
-                btn -> minecraft.gui.setScreen(new WaypointEditScreen(this))).bounds(cx + 318, toolY, 90, 20).build());
-        addRenderableWidget(Button.builder(Component.translatable("label.explorermap.share_discovery"),
-                btn -> minecraft.gui.setScreen(new DiscoveryShareScreen(this, mapId)))
-                .bounds(cx + 318, toolY + 22, 90, 20).build());
-
-        addRenderableWidget(Button.builder(Component.literal("X"),
-                btn -> this.onClose()).bounds(cx + size - 20, toolY, 20, 20).build());
+    @Override
+    public void tick() {
+        super.tick();
+        if (contextMenuWaypoint != null || ++tickCounter % 5 != 0) return;
+        if (signature() != lastSignature) {
+            clearWidgets();
+            init();
+        }
     }
 
     @Override
@@ -194,10 +245,10 @@ public class FullMapScreen extends Screen {
     }
 
     private void renderCompass(GuiGraphicsExtractor ctx, int x, int y) {
-        ctx.text(this.font, "N", x + 5, y,      0xFFFF5555, true);
-        ctx.text(this.font, "S", x + 5, y + 20, 0xFFAAAAAA, true);
-        ctx.text(this.font, "W", x,     y + 10, 0xFFAAAAAA, true);
-        ctx.text(this.font, "E", x + 12,y + 10, 0xFFAAAAAA, true);
+        ctx.text(this.font, Component.translatable("explorermap.compass.north").getString(), x + 5, y,      0xFFFF5555, true);
+        ctx.text(this.font, Component.translatable("explorermap.compass.south").getString(), x + 5, y + 20, 0xFFAAAAAA, true);
+        ctx.text(this.font, Component.translatable("explorermap.compass.west").getString(),  x,     y + 10, 0xFFAAAAAA, true);
+        ctx.text(this.font, Component.translatable("explorermap.compass.east").getString(),  x + 12,y + 10, 0xFFAAAAAA, true);
         ctx.fill(x + 7, y + 11, x + 9, y + 13, 0xFF888888);
     }
 
@@ -208,10 +259,20 @@ public class FullMapScreen extends Screen {
         ctx.text(this.font,
                 Component.translatable("explorermap.hud.explored", String.format("%.1f", frac * 100f)),
                 cx + 2, cy + size + 13, 0xFF888888, true);
-        String waypointCapacity = String.format("Waypoints %d/%d",
-                mapEntry.getWaypoints().size(), mapEntry.getWaypointCapacity());
-        ctx.text(this.font, waypointCapacity,
-                cx + 2, cy + size + 25, 0xFF888888, true);
+        if (interactive() && minecraft.player != null) {
+            // The same count the server enforces: this player's own waypoints on every tile of the map.
+            int owned = 0;
+            TileGrid grid = TileGrid.build(mapId, mapState, mapEntry, minecraft.level);
+            for (TileGrid.TileEntry tile : grid.tiles()) {
+                for (Waypoint wp : tile.entry().getWaypoints()) {
+                    if (wp.isOwnedBy(minecraft.player.getUUID())) owned++;
+                }
+            }
+            String waypointCapacity = Component.translatable("explorermap.hud.waypoints",
+                    owned, mapEntry.getWaypointCapacity()).getString();
+            ctx.text(this.font, waypointCapacity,
+                    cx + 2, cy + size + 25, 0xFF888888, true);
+        }
 
         if (minecraft.player != null) {
             String pos = String.format("X %.0f  Y %.0f  Z %.0f",
@@ -244,8 +305,8 @@ public class FullMapScreen extends Screen {
         double my = event.y();
         int button = event.button();
         if (button == 1) {
-            WaypointHit hit = findWaypointNear(mx, my);
-            if (hit != null) {
+            WaypointHit hit = interactive() ? findWaypointNear(mx, my) : null;
+            if (hit != null && (canManage(hit.waypoint()) || isOwn(hit.waypoint()))) {
                 contextMenuWaypoint = hit.waypoint();
                 contextMenuMapId = hit.mapId();
                 contextMenuX = (int) mx;
@@ -299,46 +360,60 @@ public class FullMapScreen extends Screen {
 
         if (contextMenuWaypoint == null) return;
 
-        addRenderableWidget(Button.builder(
-                Component.translatable("label.explorermap.edit_waypoint"),
-                b -> {
-                    Waypoint toEdit = contextMenuWaypoint;
-                    MapIdentity owningMapId = contextMenuMapId;
-                    closeContextMenu();
-                    if (minecraft != null) minecraft.gui.setScreen(new WaypointEditScreen(this, toEdit, owningMapId));
-                }
-        ).bounds(contextMenuX, contextMenuY, 90, 18).build());
-
-        addRenderableWidget(Button.builder(
-                Component.translatable("label.explorermap.delete_waypoint"),
-                b -> {
-                    deleteWaypoint(contextMenuWaypoint, contextMenuMapId);
-                    closeContextMenu();
-                }
-        ).bounds(contextMenuX, contextMenuY + 20, 90, 18).build());
-
-        addRenderableWidget(Button.builder(
-                Component.translatable("label.explorermap.share_waypoint"),
-                b -> {
-                    Waypoint toShare = contextMenuWaypoint;
-                    MapIdentity owningMapId = contextMenuMapId;
-                    closeContextMenu();
-                    if (minecraft != null) {
-                        minecraft.gui.setScreen(new WaypointShareScreen(this, owningMapId, toShare));
+        // Only offer what the server will accept: owners edit, delete and share; admins also manage system waypoints.
+        int y = contextMenuY;
+        if (canManage(contextMenuWaypoint)) {
+            addRenderableWidget(Button.builder(
+                    Component.translatable("label.explorermap.edit_waypoint"),
+                    b -> {
+                        Waypoint toEdit = contextMenuWaypoint;
+                        MapIdentity owningMapId = contextMenuMapId;
+                        closeContextMenu();
+                        if (minecraft != null) minecraft.gui.setScreen(new WaypointEditScreen(this, toEdit, owningMapId));
                     }
-                }
-        ).bounds(contextMenuX, contextMenuY + 40, 90, 18).build());
+            ).bounds(contextMenuX, y, 90, 18).build());
+            y += 20;
+
+            addRenderableWidget(Button.builder(
+                    Component.translatable("label.explorermap.delete_waypoint"),
+                    b -> {
+                        deleteWaypoint(contextMenuWaypoint, contextMenuMapId);
+                        closeContextMenu();
+                    }
+            ).bounds(contextMenuX, y, 90, 18).build());
+            y += 20;
+        }
+
+        if (isOwn(contextMenuWaypoint)) {
+            addRenderableWidget(Button.builder(
+                    Component.translatable("label.explorermap.share_waypoint"),
+                    b -> {
+                        Waypoint toShare = contextMenuWaypoint;
+                        MapIdentity owningMapId = contextMenuMapId;
+                        closeContextMenu();
+                        if (minecraft != null) {
+                            minecraft.gui.setScreen(new WaypointShareScreen(this, owningMapId, toShare));
+                        }
+                    }
+            ).bounds(contextMenuX, y, 90, 18).build());
+        }
+    }
+
+    private boolean isOwn(Waypoint wp) {
+        return minecraft != null && minecraft.player != null && wp.isOwnedBy(minecraft.player.getUUID());
+    }
+
+    private boolean canManage(Waypoint wp) {
+        return isOwn(wp) || (wp.isSystemOrLegacy() && mapEntry != null && mapEntry.canManageSystemWaypoints());
     }
 
     private void deleteWaypoint(Waypoint wp, MapIdentity owningMapId) {
         if (minecraft == null || minecraft.player == null || owningMapId == null) return;
 
-        var entry = ClientMapCache.get(owningMapId);
-        if (entry != null) entry.removeWaypoint(wp.id());
-
+        // No local removal: the server answers with the real list, so a rejected delete leaves no ghost.
         ItemStack offHand = minecraft.player.getItemInHand(InteractionHand.OFF_HAND);
         if (ExplorerMapMod.isFilledMap(offHand)) {
-            ClientPlayNetworking.send(new DeleteWaypointPayload(owningMapId, wp.id()));
+            ClientNet.send(new DeleteWaypointPayload(owningMapId, wp.id()));
         }
     }
 
@@ -398,7 +473,10 @@ public class FullMapScreen extends Screen {
     private void adjustZoom(float delta) { zoom = Math.clamp(zoom + delta, 0.5f, 4.0f); }
 
     private void expand(ExpansionRecord.Direction dir, boolean highDetail) {
-        ClientPlayNetworking.send(new RequestExpansionPayload(dir, highDetail));
+        if (minecraft == null || minecraft.player == null) return;
+        BlockPos table = ExpansionHandler.findNearbyTable(minecraft.player);
+        if (table == null) return;
+        ClientNet.send(new RequestExpansionPayload(dir, highDetail, table));
     }
 
     private void resolveMap() {

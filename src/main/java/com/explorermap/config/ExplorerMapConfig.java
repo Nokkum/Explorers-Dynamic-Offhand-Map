@@ -35,16 +35,32 @@ public class ExplorerMapConfig implements ConfigData {
     @ConfigEntry.Gui.Tooltip
     public Corner corner = Corner.BOTTOM_RIGHT;
 
+    @ConfigEntry.Gui.Tooltip
     @ConfigEntry.BoundedDiscrete(min = 60, max = 240)
     public int mapSize = 100;
 
+    @ConfigEntry.Gui.Tooltip
     @ConfigEntry.BoundedDiscrete(min = 2, max = 32)
     public int padding = 8;
 
+    @ConfigEntry.Gui.Tooltip
     @ConfigEntry.BoundedDiscrete(min = 20, max = 100)
     public int opacityPercent = 90;
 
     public float opacity() { return opacityPercent / 100f; }
+
+    /** Keeps a hand-edited or out-of-range config file usable: values are clamped, not rejected. */
+    @Override
+    public void validatePostLoad() {
+        mapSize = Math.max(60, Math.min(240, mapSize));
+        padding = Math.max(2, Math.min(32, padding));
+        opacityPercent = Math.max(20, Math.min(100, opacityPercent));
+        discoveryTickInterval = Math.max(1, Math.min(20, discoveryTickInterval));
+        rayCount = Math.max(8, Math.min(64, rayCount));
+        maxExpansionTiles = expansionTileLimit();
+        if (corner == null) corner = Corner.BOTTOM_RIGHT;
+        if (gridSpacing == null) gridSpacing = GridSpacing.CHUNK;
+    }
 
     @ConfigEntry.Gui.Tooltip
     public boolean hideWhenSneaking = false;
@@ -58,17 +74,16 @@ public class ExplorerMapConfig implements ConfigData {
     @ConfigEntry.Gui.Tooltip
     public boolean highlightRecentDiscoveries = true;
 
+    @ConfigEntry.Gui.Tooltip
     @ConfigEntry.BoundedDiscrete(min = 1, max = 20)
     public int discoveryTickInterval = 3;
 
+    @ConfigEntry.Gui.Tooltip
     @ConfigEntry.BoundedDiscrete(min = 8, max = 64)
     public int rayCount = 32;
 
     @ConfigEntry.Gui.Tooltip
     public boolean showExpansionArrows = true;
-
-    @ConfigEntry.BoundedDiscrete(min = 1, max = 8)
-    public int expansionPaperCost = 1;
 
     @ConfigEntry.Gui.Tooltip
     @ConfigEntry.BoundedDiscrete(min = MIN_EXPANSION_TILES, max = MAX_EXPANSION_TILES)

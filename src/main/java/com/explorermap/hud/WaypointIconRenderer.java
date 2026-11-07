@@ -1,5 +1,6 @@
 package com.explorermap.hud;
 
+import com.explorermap.gui.GuiText;
 import com.explorermap.registry.ExplorerMapRegistry;
 import com.explorermap.waypoint.Waypoint;
 import net.fabricmc.api.EnvType;
@@ -58,11 +59,12 @@ public final class WaypointIconRenderer {
                 int labelX = sx + iconSize / 2 + 2;
                 int labelY = sy - 4;
 
-                ctx.text(client.font, waypoint.name(),
+                String label = GuiText.waypointName(waypoint);
+                ctx.text(client.font, label,
                         labelX + 1, labelY + 1, 0x88000000, false);
 
                 // Alpha is now mandatory when drawing text (an alpha of 0 draws nothing).
-                ctx.text(client.font, waypoint.name(),
+                ctx.text(client.font, label,
                         labelX, labelY, 0xFF000000 | waypoint.color(), false);
             }
         }

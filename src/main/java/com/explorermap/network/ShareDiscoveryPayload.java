@@ -35,7 +35,7 @@ public record ShareDiscoveryPayload(MapIdentity mapId, String targetName) implem
     public static void register() {
         PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC);
         ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) ->
-                context.server().execute(() -> handleOnServer(context.player(), payload)));
+                handleOnServer(context.player(), payload));
     }
 
     private static void handleOnServer(ServerPlayer sender, ShareDiscoveryPayload payload) {
@@ -51,5 +51,7 @@ public record ShareDiscoveryPayload(MapIdentity mapId, String targetName) implem
         ExplorerMapSavedData savedData = ExplorerMapSavedData.get(sender.level().getServer());
         if (!savedData.sharePlayerDiscovery(payload.mapId(), sender.getUUID(), target.getUUID())) return;
         SyncDiscoveryPayload.sendTo(target, payload.mapId());
+        // System waypoints are only sent for discovered pixels, so the recipient may now see more of them.
+        SyncWaypointsPayload.sendTo(target, payload.mapId());
     }
 }

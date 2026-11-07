@@ -1,13 +1,14 @@
 package com.explorermap.network;
 
 import com.explorermap.ExplorerMapMod;
-import com.explorermap.config.ExplorerMapConfig;
+import com.explorermap.config.ExplorerMapServerConfig;
 import com.explorermap.data.ExplorerMapSavedData;
 import com.explorermap.data.MapIdentity;
 import com.explorermap.expansion.ExpansionRecord;
 import com.explorermap.registry.ExplorerMapRegistry;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
@@ -18,11 +19,20 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.level.block.Blocks;
+
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public record RequestExpansionPayload(
         ExpansionRecord.Direction direction,
-        boolean highDetail
+        boolean highDetail,
+        BlockPos tablePos
 ) implements CustomPacketPayload {
+
+    private static final long COOLDOWN_NANOS = 1_000_000_000L;
+    private static final Map<UUID, Long> LAST_REQUEST = new ConcurrentHashMap<>();
 
     public static final CustomPacketPayload.Type<RequestExpansionPayload> TYPE =
             new CustomPacketPayload.Type<>(ExplorerMapRegistry.id("request_expansion"));
@@ -31,6 +41,7 @@ public record RequestExpansionPayload(
             StreamCodec.composite(
                     ExpansionRecord.Direction.PACKET_CODEC, RequestExpansionPayload::direction,
                     ByteBufCodecs.BOOL, RequestExpansionPayload::highDetail,
+                    BlockPos.STREAM_CODEC, RequestExpansionPayload::tablePos,
                     RequestExpansionPayload::new
             );
 
@@ -39,13 +50,32 @@ public record RequestExpansionPayload(
 
     public static void register() {
         PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC);
-        ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) -> {
-            ServerPlayer player = context.player();
-            context.server().execute(() -> handleOnServer(player, payload));
-        });
+        ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) ->
+                handleOnServer(context.player(), payload));
+    }
+
+    public static void forgetPlayer(UUID playerId) {
+        LAST_REQUEST.remove(playerId);
     }
 
     private static void handleOnServer(ServerPlayer player, RequestExpansionPayload payload) {
+        long now = System.nanoTime();
+        Long last = LAST_REQUEST.get(player.getUUID());
+        if (last != null && now - last < COOLDOWN_NANOS) {
+            ExpansionFailedPayload.sendTo(player, payload.direction(), ExpansionFailedPayload.Reason.ON_COOLDOWN);
+            return;
+        }
+        LAST_REQUEST.put(player.getUUID(), now);
+
+        // Distance first: the position is client-supplied and must not make the server look at far-away chunks.
+        BlockPos table = payload.tablePos();
+        if (player.distanceToSqr(table.getX() + 0.5, table.getY() + 0.5, table.getZ() + 0.5)
+                > ExplorerMapMod.TABLE_REACH_SQR
+                || !player.level().getBlockState(table).is(Blocks.CARTOGRAPHY_TABLE)) {
+            ExpansionFailedPayload.sendTo(player, payload.direction(), ExpansionFailedPayload.Reason.NO_TABLE);
+            return;
+        }
+
         var offHand = player.getItemInHand(InteractionHand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) {
             ExpansionFailedPayload.sendTo(player, payload.direction(),
@@ -77,6 +107,11 @@ public record RequestExpansionPayload(
 
         var savedData = ExplorerMapSavedData.get(player.level().getServer());
 
+        if (ExpansionFamilySync.familyOf(savedData, mapId).maps().size() >= ExpansionFamilySync.MAX_FAMILY_MAPS) {
+            ExpansionFailedPayload.sendTo(player, payload.direction(), ExpansionFailedPayload.Reason.FAMILY_FULL);
+            return;
+        }
+
         if (savedData.getOrCreate(mapId).hasExpansion(payload.direction())) {
             ExpansionFailedPayload.sendTo(player, payload.direction(),
                     ExpansionFailedPayload.Reason.ALREADY_EXPANDED);
@@ -107,18 +142,15 @@ public record RequestExpansionPayload(
         }
 
         if (!newMapId.dimension().equals(mapId.dimension())) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] Expansion rejected: target {} is not in the same dimension as source {}",
-                    newMapId.asKey(), mapId.asKey());
+            RejectLog.warn(player, "expansion target {} is not in the same dimension as source {}",
+                    newMapId, mapId);
             ExpansionFailedPayload.sendTo(player, payload.direction(),
                     ExpansionFailedPayload.Reason.NO_MAP_IN_OFFHAND);
             return;
         }
 
         if (savedData.isAccessibleFrom(newMapId, mapId)) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] Expansion rejected: {} -> {} would create a cycle",
-                    mapId.asKey(), newMapId.asKey());
+            RejectLog.warn(player, "expansion {} -> {} would create a cycle", mapId, newMapId);
             ExpansionFailedPayload.sendTo(player, payload.direction(),
                     ExpansionFailedPayload.Reason.CYCLE_DETECTED);
             return;
@@ -139,7 +171,7 @@ public record RequestExpansionPayload(
         if (player.isCreative()) return null;
 
         var inv  = player.getInventory();
-        int cost = ExplorerMapConfig.get().expansionPaperCost;
+        int cost = ExplorerMapServerConfig.expansionPaperCost();
 
         int paperHeld = 0;
         for (int i = 0; i < inv.getContainerSize(); i++) {
@@ -160,7 +192,7 @@ public record RequestExpansionPayload(
         if (player.isCreative()) return;
 
         var inv  = player.getInventory();
-        int cost = ExplorerMapConfig.get().expansionPaperCost;
+        int cost = ExplorerMapServerConfig.expansionPaperCost();
 
         int remaining = cost;
         for (int i = 0; i < inv.getContainerSize() && remaining > 0; i++) {

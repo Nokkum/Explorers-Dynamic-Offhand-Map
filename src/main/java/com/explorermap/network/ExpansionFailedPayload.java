@@ -22,7 +22,10 @@ public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason
         MISSING_INK_OR_COMPASS,
         ALREADY_EXPANDED,
         NO_MAP_IN_OFFHAND,
-        CYCLE_DETECTED;
+        CYCLE_DETECTED,
+        NO_TABLE,
+        ON_COOLDOWN,
+        FAMILY_FULL;
 
         private static final Reason[] VALUES = values();
 

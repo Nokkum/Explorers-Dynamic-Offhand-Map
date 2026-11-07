@@ -17,17 +17,18 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.resources.Identifier;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import com.explorermap.network.ClientNet;
 import com.explorermap.network.SaveWaypointPayload;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
 @Environment(EnvType.CLIENT)
 public class WaypointEditScreen extends Screen {
 
-    private static final int[] COLORS = {
+    private static final int[] DEFAULT_COLORS = {
         0xFFFFFFFF,
         0xFFFF5555,
         0xFF55FF55,
@@ -50,6 +51,9 @@ public class WaypointEditScreen extends Screen {
     private final Screen parent;
     private final Waypoint editingWaypoint;
     private final MapIdentity editingMapId;
+
+    private int[] colors = DEFAULT_COLORS;
+    private boolean initialized;
 
     private EditBox nameField;
     private List<String>    iconIds = new ArrayList<>();
@@ -82,22 +86,33 @@ public class WaypointEditScreen extends Screen {
 
         iconIds = List.copyOf(ExplorerMapRegistry.allIconIds());
 
-        if (editingWaypoint != null) {
+        if (editingWaypoint != null && !initialized) {
             int idx = iconIds.indexOf(editingWaypoint.iconId());
             if (idx >= 0) selectedIconIndex = idx;
-            for (int i = 0; i < COLORS.length; i++) {
-                if (COLORS[i] == editingWaypoint.color()) { selectedColorIndex = i; break; }
-            }
-        }
 
-        dlgW = 280;
+            // A color outside the palette gets its own swatch, so editing doesn't silently change it.
+            int existing = editingWaypoint.color();
+            int colorIdx = -1;
+            for (int i = 0; i < DEFAULT_COLORS.length; i++) {
+                if (DEFAULT_COLORS[i] == existing) { colorIdx = i; break; }
+            }
+            if (colorIdx < 0) {
+                colors = Arrays.copyOf(DEFAULT_COLORS, DEFAULT_COLORS.length + 1);
+                colors[colors.length - 1] = existing;
+                colorIdx = colors.length - 1;
+            }
+            selectedColorIndex = colorIdx;
+        }
+        initialized = true;
+
+        dlgW = Math.min(280, this.width - 8);
         int pad = 12;
 
         int cols = Math.max(1, (dlgW - pad * 2 + ICON_GAP) / (ICON_CELL + ICON_GAP));
         int iconRows = (iconIds.size() + cols - 1) / Math.max(1, cols);
 
         int colorCols = Math.max(1, (dlgW - pad * 2 + SWATCH_GAP) / (SWATCH_SIZE + SWATCH_GAP));
-        int colorRows = (COLORS.length + colorCols - 1) / Math.max(1, colorCols);
+        int colorRows = (colors.length + colorCols - 1) / Math.max(1, colorCols);
 
         int contentHeight = pad + 14 + 28
                 + iconRows * (ICON_CELL + ICON_GAP)
@@ -114,8 +129,8 @@ public class WaypointEditScreen extends Screen {
         nameField = new EditBox(this.font,
                 dlgX + pad, fieldY, dlgW - pad * 2, 18,
                 Component.translatable("label.explorermap.waypoint_name"));
-        nameField.setMaxLength(32);
-        nameField.setValue(editingWaypoint != null ? editingWaypoint.name() : "");
+        nameField.setMaxLength(Waypoint.MAX_NAME_LENGTH);
+        nameField.setValue(editingWaypoint != null ? GuiText.waypointName(editingWaypoint) : "");
         nameField.setHint(Component.translatable("explorermap.waypoint.default_name"));
         addRenderableWidget(nameField);
 
@@ -135,7 +150,7 @@ public class WaypointEditScreen extends Screen {
         colorGridY = iconGridY + iconRows * (ICON_CELL + ICON_GAP) + 10;
         colorGridX = dlgX + pad;
 
-        for (int i = 0; i < COLORS.length; i++) {
+        for (int i = 0; i < colors.length; i++) {
             final int idx = i;
             int col = i % colorCols, row = i / colorCols;
             int bx = colorGridX + col * (SWATCH_SIZE + SWATCH_GAP);
@@ -168,13 +183,13 @@ public class WaypointEditScreen extends Screen {
         ctx.centeredText(this.font,
                 Component.translatable("screen.explorermap.waypoint_edit"), dlgX + dlgW / 2, dlgY + pad, 0xFFFFFFFF);
 
-        ctx.text(this.font, "Name:",
+        ctx.text(this.font, Component.translatable("label.explorermap.name_label").getString(),
                 dlgX + pad, dlgY + pad + 4, 0xFFAAAAAA, true);
 
-        ctx.text(this.font, "Icon:",
+        ctx.text(this.font, Component.translatable("label.explorermap.icon_label").getString(),
                 dlgX + pad, iconGridY - 11, 0xFFAAAAAA, true);
 
-        ctx.text(this.font, "Color:",
+        ctx.text(this.font, Component.translatable("label.explorermap.color_label").getString(),
                 dlgX + pad, colorGridY - 11, 0xFFAAAAAA, true);
     }
 
@@ -191,16 +206,16 @@ public class WaypointEditScreen extends Screen {
             int bx = iconGridX + col * (ICON_CELL + ICON_GAP);
             int by = iconGridY + row * (ICON_CELL + ICON_GAP);
             Identifier tex = ExplorerMapRegistry.getWaypointTexture(iconIds.get(i));
-            WaypointIconRenderer.drawPickerCell(ctx, tex, COLORS[selectedColorIndex],
+            WaypointIconRenderer.drawPickerCell(ctx, tex, colors[selectedColorIndex],
                     bx, by, ICON_CELL, i == selectedIconIndex);
         }
 
         int colorCols = Math.max(1, (dlgW - pad * 2 + SWATCH_GAP) / (SWATCH_SIZE + SWATCH_GAP));
-        for (int i = 0; i < COLORS.length; i++) {
+        for (int i = 0; i < colors.length; i++) {
             int col = i % colorCols, row = i / colorCols;
             int sx = colorGridX + col * (SWATCH_SIZE + SWATCH_GAP);
             int sy = colorGridY + row * (SWATCH_SIZE + SWATCH_GAP);
-            ctx.fill(sx, sy, sx + SWATCH_SIZE, sy + SWATCH_SIZE, COLORS[i]);
+            ctx.fill(sx, sy, sx + SWATCH_SIZE, sy + SWATCH_SIZE, colors[i]);
             if (i == selectedColorIndex) {
                 ctx.outline(sx - 2, sy - 2, SWATCH_SIZE + 4, SWATCH_SIZE + 4, 0xFFFFFFFF);
             }
@@ -211,11 +226,11 @@ public class WaypointEditScreen extends Screen {
                     ? Component.translatable("explorermap.waypoint.default_name").getString()
                     : nameField.getValue();
             Identifier tex = ExplorerMapRegistry.getWaypointTexture(iconIds.get(selectedIconIndex));
-            WaypointIconRenderer.drawPickerCell(ctx, tex, COLORS[selectedColorIndex],
+            WaypointIconRenderer.drawPickerCell(ctx, tex, colors[selectedColorIndex],
                     previewX, previewY, ICON_CELL, false);
             ctx.text(this.font, name,
                     previewX + ICON_CELL + 6, previewY + ICON_CELL / 2 - 4,
-                    COLORS[selectedColorIndex], true);
+                    colors[selectedColorIndex], true);
         }
     }
 
@@ -223,13 +238,17 @@ public class WaypointEditScreen extends Screen {
         if (minecraft == null || minecraft.player == null) return;
 
         String name = nameField.getValue().trim();
+        // An untouched automatic name stays a translation key, so it keeps following each player's language.
+        if (editingWaypoint != null && name.equals(GuiText.waypointName(editingWaypoint))) {
+            name = editingWaypoint.name();
+        }
         if (name.isEmpty()) {
             name = Component.translatable("explorermap.waypoint.default_name").getString()
                     + " (" + (int) minecraft.player.getX() + ", " + (int) minecraft.player.getZ() + ")";
         }
 
         String iconId = iconIds.isEmpty() ? Waypoint.DEFAULT_ICON : iconIds.get(selectedIconIndex);
-        int color = COLORS[selectedColorIndex];
+        int color = colors[selectedColorIndex];
 
         double wx, wz;
         if (editingWaypoint != null) {
@@ -269,10 +288,8 @@ public class WaypointEditScreen extends Screen {
         }
         if (mapId == null) { minecraft.gui.setScreen(parent); return; }
 
-        var mapEntry = ClientMapCache.getOrCreate(mapId);
-        mapEntry.addWaypoint(wp);
-
-        ClientPlayNetworking.send(new SaveWaypointPayload(mapId, wp));
+        // No local add: the server answers with the real list, so a rejected save leaves no ghost waypoint.
+        ClientNet.send(new SaveWaypointPayload(mapId, wp));
 
         minecraft.gui.setScreen(parent);
     }

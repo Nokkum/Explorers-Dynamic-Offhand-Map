@@ -5,6 +5,7 @@ import com.explorermap.data.ClientMapCache;
 import com.explorermap.data.ExplorerMapSavedData;
 import com.explorermap.data.MapEntryData;
 import com.explorermap.data.MapIdentity;
+import com.explorermap.data.MapPixels;
 import com.explorermap.registry.ExplorerMapRegistry;
 import com.explorermap.structure.StructureWaypointDetector;
 import net.fabricmc.api.EnvType;
@@ -19,7 +20,9 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
+import java.util.Arrays;
 import java.util.Set;
 import java.util.UUID;
 
@@ -35,7 +38,10 @@ public final class SyncDiscoveryPayload {
     private static final DiscoveryUploadTracker<MapIdentity> UPLOAD_TRACKER =
             new DiscoveryUploadTracker<>(System::nanoTime);
 
-    private static int ticksSinceLastUpload = 0;
+    /** Farthest a player can plausibly have seen a pixel from where they are now (ray range plus movement). */
+    private static final double MAX_REPORT_RANGE = 384.0;
+
+    private static long lastUploadWindowNanos = 0L;
 
     public record Upload(MapIdentity mapId, long generation, byte[] bitmask) implements CustomPacketPayload {
 
@@ -57,7 +63,7 @@ public final class SyncDiscoveryPayload {
             ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, ctx) -> {
                 ServerPlayer sender = ctx.player();
                 if (!LIMITER.tryAcquire(sender.getUUID(), payload.bitmask().length)) return;
-                ctx.server().execute(() -> handleOnServer(ctx.server(), sender, payload));
+                handleOnServer(ctx.server(), sender, payload);
             });
         }
 
@@ -78,16 +84,26 @@ public final class SyncDiscoveryPayload {
 
             var mapState = MapIdentity.resolveAuthorized(server, savedData, heldRoot, payload.mapId());
             if (mapState == null) {
-                ExplorerMapMod.LOGGER.warn(
-                        "[ExplorerMap] Rejected discovery upload for map {} from {} - invalid or not accessible from the held map",
-                        payload.mapId().asKey(), sender.getName().getString());
+                RejectLog.warn(sender, "discovery upload for map {} is invalid or not accessible from the held map",
+                        payload.mapId());
                 penalize(sender);
                 return;
             }
 
+            // Only pixels near the player's current position can have been seen by them.
+            byte[] accepted = sender.level().dimension().equals(payload.mapId().dimension())
+                    ? limitToReach(mapState, sender, payload.bitmask())
+                    : new byte[MapEntryData.BYTE_COUNT];
+
+            byte[] before = savedData.getPlayerDiscovery(payload.mapId(), sender.getUUID());
             Set<Integer> newlyDiscovered = savedData.mergePlayerBitmask(
-                    payload.mapId(), sender.getUUID(), payload.bitmask());
+                    payload.mapId(), sender.getUUID(), accepted);
             ServerPlayNetworking.send(sender, new Ack(payload.mapId(), payload.generation()));
+
+            // System waypoints are only sent for discovered pixels, so new discoveries can reveal some.
+            if (!Arrays.equals(before, savedData.getPlayerDiscovery(payload.mapId(), sender.getUUID()))) {
+                SyncWaypointsPayload.sendTo(sender, payload.mapId());
+            }
             if (newlyDiscovered.isEmpty()) return;
 
             ExplorerMapMod.LOGGER.debug("[ExplorerMap] Merged discovery for map {} from {}",
@@ -98,6 +114,23 @@ public final class SyncDiscoveryPayload {
 
             sendTo(sender, payload.mapId(), savedData);
         }
+    }
+
+    private static byte[] limitToReach(MapItemSavedData state, ServerPlayer sender, byte[] bitmask) {
+        int minCol = Math.max(0, MapPixels.col(state, sender.getX() - MAX_REPORT_RANGE));
+        int maxCol = Math.min(MapEntryData.MAP_SIZE - 1, MapPixels.col(state, sender.getX() + MAX_REPORT_RANGE));
+        int minRow = Math.max(0, MapPixels.row(state, sender.getZ() - MAX_REPORT_RANGE));
+        int maxRow = Math.min(MapEntryData.MAP_SIZE - 1, MapPixels.row(state, sender.getZ() + MAX_REPORT_RANGE));
+
+        byte[] result = new byte[MapEntryData.BYTE_COUNT];
+        for (int row = minRow; row <= maxRow; row++) {
+            for (int col = minCol; col <= maxCol; col++) {
+                if (!MapPixels.isSet(bitmask, col, row)) continue;
+                int bit = row * MapEntryData.MAP_SIZE + col;
+                result[bit >> 3] |= (byte) (1 << (bit & 7));
+            }
+        }
+        return result;
     }
 
     public record Ack(MapIdentity mapId, long generation) implements CustomPacketPayload {
@@ -185,15 +218,18 @@ public final class SyncDiscoveryPayload {
 
     @Environment(EnvType.CLIENT)
     public static void resetUploadState() {
-        ticksSinceLastUpload = 0;
+        lastUploadWindowNanos = 0L;
         UPLOAD_TRACKER.clear();
     }
 
     @Environment(EnvType.CLIENT)
     public static boolean uploadWindowOpen() {
-        ticksSinceLastUpload++;
-        if (ticksSinceLastUpload < UPLOAD_INTERVAL_TICKS) return false;
-        ticksSinceLastUpload = 0;
+        // Wall clock, not a count of calls: the engine calls this once per discovery tick, not per game tick.
+        long now = System.nanoTime();
+        if (lastUploadWindowNanos != 0L && now - lastUploadWindowNanos < UPLOAD_WINDOW_MILLIS * 1_000_000L) {
+            return false;
+        }
+        lastUploadWindowNanos = now;
         return true;
     }
 

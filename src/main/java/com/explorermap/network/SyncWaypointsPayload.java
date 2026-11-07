@@ -4,6 +4,7 @@ import com.explorermap.ExplorerMapMod;
 import com.explorermap.data.ClientMapCache;
 import com.explorermap.data.ExplorerMapSavedData;
 import com.explorermap.data.MapIdentity;
+import com.explorermap.data.MapPixels;
 import com.explorermap.registry.ExplorerMapRegistry;
 import com.explorermap.waypoint.Waypoint;
 import net.fabricmc.api.EnvType;
@@ -20,12 +21,14 @@ import net.minecraft.world.InteractionHand;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public record SyncWaypointsPayload(
         MapIdentity mapId,
         List<Waypoint> waypoints,
         int waypointCapacity,
-        int waypointShareCharges
+        int waypointShareCharges,
+        boolean canManageSystem
 ) implements CustomPacketPayload {
 
     private static final int MAX_WAYPOINTS = 512;
@@ -41,6 +44,7 @@ public record SyncWaypointsPayload(
                     SyncWaypointsPayload::waypoints,
                     ByteBufCodecs.VAR_INT, SyncWaypointsPayload::waypointCapacity,
                     ByteBufCodecs.VAR_INT, SyncWaypointsPayload::waypointShareCharges,
+                    ByteBufCodecs.BOOL, SyncWaypointsPayload::canManageSystem,
                     SyncWaypointsPayload::new
             );
 
@@ -48,17 +52,58 @@ public record SyncWaypointsPayload(
     public CustomPacketPayload.Type<? extends CustomPacketPayload> type() { return TYPE; }
 
     public static void sendTo(ServerPlayer player, MapIdentity mapId) {
-        var savedData = ExplorerMapSavedData.get(player.level().getServer());
-        List<Waypoint> waypoints = savedData.visibleWaypoints(mapId, player.getUUID());
+        var server = player.level().getServer();
+        var savedData = ExplorerMapSavedData.get(server);
+        UUID playerId = player.getUUID();
+
+        List<Waypoint> waypoints = visibleTo(server, savedData, playerId, mapId);
         if (waypoints.size() > MAX_WAYPOINTS) {
             ExplorerMapMod.LOGGER.warn(
                     "[ExplorerMap] Map {} has {} waypoints visible to {}; only the first {} are synced",
                     mapId.asKey(), waypoints.size(), player.getName().getString(), MAX_WAYPOINTS);
             waypoints = List.copyOf(waypoints.subList(0, MAX_WAYPOINTS));
         }
-        var entry = savedData.getOrCreate(mapId);
+
+        // The allowance is the player's own, for the map they are holding.
+        var offHand = player.getItemInHand(InteractionHand.OFF_HAND);
+        MapIdentity heldRoot = ExplorerMapMod.isFilledMap(offHand) ? MapIdentity.ofStack(offHand, player.level()) : null;
+        boolean admin = ExplorerMapMod.canManageSystemWaypoints(player);
         ServerPlayNetworking.send(player, new SyncWaypointsPayload(
-                mapId, waypoints, entry.getWaypointCapacity(), entry.getWaypointShareCharges()));
+                mapId, waypoints,
+                savedData.waypointCapacity(heldRoot, playerId),
+                savedData.waypointShareCharges(heldRoot, playerId),
+                admin));
+    }
+
+    /**
+     * What this player may see: their own and shared waypoints, plus system waypoints whose spot they have
+     * discovered, so undiscovered coordinates never leave the server. Own waypoints come first so a cut-off
+     * at the sync limit drops other people's first.
+     */
+    private static List<Waypoint> visibleTo(MinecraftServer server, ExplorerMapSavedData savedData,
+                                            UUID playerId, MapIdentity mapId) {
+        List<Waypoint> visible = savedData.visibleWaypoints(mapId, playerId);
+        var mapState = MapIdentity.resolveAndVerify(server, mapId);
+        byte[] discovered = savedData.getPlayerDiscovery(mapId, playerId);
+
+        List<Waypoint> own = new ArrayList<>();
+        List<Waypoint> shared = new ArrayList<>();
+        List<Waypoint> system = new ArrayList<>();
+        for (Waypoint wp : visible) {
+            if (wp.isOwnedBy(playerId)) {
+                own.add(wp);
+            } else if (!wp.isSystemOrLegacy()) {
+                shared.add(wp);
+            } else if (mapState != null
+                    && MapPixels.isWorldPositionSet(mapState, discovered, wp.worldX(), wp.worldZ())) {
+                system.add(wp);
+            }
+        }
+        List<Waypoint> result = new ArrayList<>(own.size() + shared.size() + system.size());
+        result.addAll(own);
+        result.addAll(shared);
+        result.addAll(system);
+        return result;
     }
 
     public static void broadcastTo(MinecraftServer server, MapIdentity mapId) {
@@ -88,7 +133,7 @@ public record SyncWaypointsPayload(
     private static void handleOnClient(SyncWaypointsPayload payload) {
         var mapEntry = ClientMapCache.getOrCreate(payload.mapId());
         mapEntry.replaceAllWaypoints(payload.waypoints());
-        mapEntry.setWaypointCapacity(payload.waypointCapacity(), payload.waypointShareCharges());
+        mapEntry.setAllowance(payload.waypointCapacity(), payload.waypointShareCharges(), payload.canManageSystem());
 
         ExplorerMapMod.LOGGER.debug("[ExplorerMap] Synced {} waypoints for map {}",
                 payload.waypoints().size(), payload.mapId().asKey());

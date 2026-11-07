@@ -5,8 +5,10 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.Identifier;
 import net.minecraft.network.codec.StreamCodec;
 
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -46,6 +48,12 @@ public record Waypoint(UUID id,
 
     public Waypoint withPosition(double newWorldX, double newWorldZ) {
         return new Waypoint(id, name, newWorldX, newWorldZ, iconId, color, ownerUuid);
+    }
+
+    /** Format check only: custom icons are registered on the client, so the server cannot know them. */
+    public static boolean isAcceptableIconId(String iconId) {
+        return iconId != null && !iconId.isBlank() && iconId.length() <= MAX_ICON_ID_LENGTH
+                && Identifier.tryParse(iconId) != null;
     }
 
     public boolean isOwnedBy(UUID playerId) {
@@ -89,7 +97,11 @@ public record Waypoint(UUID id,
                             .forGetter(Waypoint::ownerUuid)
             ).apply(instance, (idRaw, name, worldX, worldZ, iconId, color, ownerUuid) -> {
                 UUID id = parseIdOrNull(idRaw);
-                if (id == null) id = UUID.randomUUID();
+                // Derived from content so a missing id is the same on every load (shares keep pointing at it).
+                if (id == null) {
+                    id = UUID.nameUUIDFromBytes((name + '|' + worldX + '|' + worldZ + '|' + ownerUuid)
+                            .getBytes(StandardCharsets.UTF_8));
+                }
                 return new Waypoint(id, name, worldX, worldZ, iconId, color, ownerUuid);
             })
     ).comapFlatMap(Waypoint::validateOwner, Function.identity());

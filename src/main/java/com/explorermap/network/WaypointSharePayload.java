@@ -41,7 +41,7 @@ public record WaypointSharePayload(MapIdentity mapId, UUID waypointId, String ta
     public static void register() {
         PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC);
         ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) ->
-                context.server().execute(() -> handleOnServer(context.player(), payload)));
+                handleOnServer(context.player(), payload));
     }
 
     private static void handleOnServer(ServerPlayer sender, WaypointSharePayload payload) {
@@ -52,9 +52,8 @@ public record WaypointSharePayload(MapIdentity mapId, UUID waypointId, String ta
         var savedData = ExplorerMapSavedData.get(sender.level().getServer());
 
         if (MapIdentity.resolveAuthorized(sender.level().getServer(), savedData, heldRoot, payload.mapId()) == null) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] ShareWaypoint: rejected from {} - map {} is invalid or not accessible from the held map",
-                    sender.getName().getString(), payload.mapId().asKey());
+            RejectLog.warn(sender, "ShareWaypoint: map {} is invalid or not accessible from the held map",
+                    payload.mapId());
             return;
         }
 
@@ -63,19 +62,20 @@ public record WaypointSharePayload(MapIdentity mapId, UUID waypointId, String ta
 
         Waypoint waypoint = entry.findWaypoint(payload.waypointId());
         if (waypoint == null || !waypoint.isOwnedBy(sender.getUUID())) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] ShareWaypoint: {} tried to share a waypoint they do not own",
-                    sender.getName().getString());
+            RejectLog.warn(sender, "ShareWaypoint: not the owner of that waypoint");
             return;
         }
 
         ServerPlayer target = sender.level().getServer().getPlayerList().getPlayerByName(payload.targetName());
         if (target == null || target == sender) return;
 
-        if (!savedData.consumeWaypointShareCharge(payload.mapId())) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] ShareWaypoint: {} has no waypoint share charge",
-                    sender.getName().getString());
+        // Already shared with that player: nothing to do, and no charge is spent.
+        if (savedData.isWaypointSharedWith(payload.mapId(), payload.waypointId(), target.getUUID())) return;
+
+        // Charges belong to the player and the held map, not to the tile the waypoint sits on.
+        if (!savedData.consumeWaypointShareCharge(heldRoot, sender.getUUID())) {
+            RejectLog.warn(sender, "ShareWaypoint: no waypoint share charge");
+            SyncWaypointsPayload.sendTo(sender, payload.mapId());
             return;
         }
 

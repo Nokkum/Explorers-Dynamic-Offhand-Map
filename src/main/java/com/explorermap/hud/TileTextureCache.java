@@ -5,6 +5,7 @@ import com.explorermap.api.ExplorerMapApi;
 import com.explorermap.config.ExplorerMapConfig;
 import com.explorermap.data.MapEntryData;
 import com.explorermap.data.MapIdentity;
+import com.explorermap.expansion.TileMapView;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -15,7 +16,6 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.MapColor;
-import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -33,7 +33,7 @@ public final class TileTextureCache {
 
     private TileTextureCache() {}
 
-    public Identifier getOrUpdate(MapIdentity mapId, MapItemSavedData mapState, MapEntryData mapEntry) {
+    public Identifier getOrUpdate(MapIdentity mapId, TileMapView mapState, MapEntryData mapEntry) {
         Entry entry = entries.get(mapId);
         long gen = mapEntry.getVisualGeneration();
         boolean highlightRecent = ExplorerMapConfig.get().highlightRecentDiscoveries;
@@ -68,14 +68,17 @@ public final class TileTextureCache {
         nextSlot = 0;
     }
 
-    private void rebuild(Entry entry, MapItemSavedData mapState, MapEntryData mapEntry) {
-        byte[] colors  = mapState.colors;
+    private void rebuild(Entry entry, TileMapView mapState, MapEntryData mapEntry) {
+        byte[] colors  = mapState.colors();
         byte[] bitmask = mapEntry.getDiscoveredPixelsCopy();
         var world = Minecraft.getInstance().level;
-        int scale = 1 << mapState.scale;
-        int minX = mapState.centerX - 64 * scale;
-        int minZ = mapState.centerZ - 64 * scale;
-        boolean sameDimension = world != null && world.dimension().equals(mapState.dimension);
+        int scale = mapState.blocksPerPixel();
+        int minX = mapState.centerX() - 64 * scale;
+        int minZ = mapState.centerZ() - 64 * scale;
+        // Biome colors need a height and biome lookup per pixel, so only do it when something registered one.
+        boolean sampleWorld = world != null && world.dimension().equals(mapState.dimension())
+                && ExplorerMapApi.hasBiomeColors();
+        boolean highlight = ExplorerMapConfig.get().highlightRecentDiscoveries;
 
         var tm = Minecraft.getInstance().getTextureManager();
 
@@ -100,8 +103,9 @@ public final class TileTextureCache {
 
                 int argb;
                 if (discovered) {
+                    // getColorFromPackedId returns ARGB (as of 26.3), the same as setPixel() takes.
                     argb = MapColor.getColorFromPackedId(colors[row * 128 + col] & 0xFF);
-                    if (sameDimension) {
+                    if (sampleWorld) {
                         int sampleX = minX + col * scale + scale / 2;
                         int sampleZ = minZ + row * scale + scale / 2;
                         int sampleY = surfaceY(world, sampleX, sampleZ);
@@ -109,14 +113,12 @@ public final class TileTextureCache {
                         argb = ExplorerMapApi.colorFor(world, sample, argb);
                     }
                     argb |= 0xFF000000;
-                    if (ExplorerMapConfig.get().highlightRecentDiscoveries) {
+                    if (highlight) {
                         argb = highlightRecent(argb, mapEntry.recentValue(col, row));
                     }
                 } else {
                     argb = FOG_ARGB;
                 }
-                // setPixel() takes ARGB (setPixelABGR() is the ABGR variant).
-                // If map colours ever look red/blue swapped, switch this call to setPixelABGR.
                 target.setPixel(col, row, argb);
             }
         }

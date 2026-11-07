@@ -15,6 +15,7 @@ import net.fabricmc.api.Environment;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
@@ -22,46 +23,6 @@ import net.minecraft.world.InteractionHand;
 
 @Environment(EnvType.CLIENT)
 public class MinimapHud {
-
-    public static boolean handleClick(Minecraft client) {
-        if (client == null || client.player == null || client.level == null || client.gui.screen() != null) {
-            return false;
-        }
-
-        ExplorerMapConfig cfg = ExplorerMapConfig.get();
-        if (!cfg.showHud || (cfg.hideWhenSneaking && client.player.isShiftKeyDown())) return false;
-
-        ItemStack offHand = client.player.getItemInHand(InteractionHand.OFF_HAND);
-        if (!ExplorerMapMod.isFilledMap(offHand)) return false;
-
-        int mapId = MapIdentity.rawIdOf(offHand);
-        MapItemSavedData mapState = mapId >= 0 ? MapIdentity.stateOf(offHand, client.level) : null;
-        if (mapState == null
-                || !DimensionMapTracker.isMapRelevantForCurrentDimension(client.player, mapState)) {
-            return false;
-        }
-
-        int size = cfg.mapSize;
-        int padding = cfg.padding;
-        int sw = client.getWindow().getGuiScaledWidth();
-        int sh = client.getWindow().getGuiScaledHeight();
-        int boxX, boxY;
-        switch (cfg.corner) {
-            case TOP_LEFT -> { boxX = padding; boxY = padding; }
-            case TOP_RIGHT -> { boxX = sw - size - padding; boxY = padding; }
-            case BOTTOM_LEFT -> { boxX = padding; boxY = sh - size - padding; }
-            default -> { boxX = sw - size - padding; boxY = sh - size - padding; }
-        }
-
-        double mouseX = client.mouseHandler.xpos() * sw / Math.max(1, client.getWindow().getScreenWidth());
-        double mouseY = client.mouseHandler.ypos() * sh / Math.max(1, client.getWindow().getScreenHeight());
-        if (mouseX < boxX || mouseX >= boxX + size || mouseY < boxY || mouseY >= boxY + size) {
-            return false;
-        }
-
-        client.gui.setScreen(new com.explorermap.gui.FullMapScreen());
-        return true;
-    }
 
     public static void render(GuiGraphicsExtractor context, DeltaTracker tickCounter) {
         Minecraft client = Minecraft.getInstance();
@@ -119,10 +80,10 @@ public class MinimapHud {
             renderCoordinates(context, player, boxX, boxY, size, cfg);
         }
 
-        renderDimensionLabel(context, player, boxX, boxY, size);
+        renderDimensionLabel(context, player, boxX, boxY, size, sh);
 
         if (cfg.showExpansionArrows) {
-            renderExpansionArrows(context, mapEntry, boxX, boxY, size);
+            renderExpansionArrows(context, mapEntry, boxX, boxY, size, padding >= 12);
         }
 
         context.outline(boxX - 2, boxY - 2, size + 4, size + 4,
@@ -152,19 +113,22 @@ public class MinimapHud {
     }
 
     private static void renderCompass(GuiGraphicsExtractor ctx, int x, int y) {
-        ctx.text(Minecraft.getInstance().font, "N", x + 3, y, 0xFFFF5555, true);
+        ctx.text(Minecraft.getInstance().font, Component.translatable("explorermap.compass.north").getString(), x + 3, y, 0xFFFF5555, true);
         ctx.text(Minecraft.getInstance().font, "·", x,      y + 10, 0xFF888888, false);
         ctx.text(Minecraft.getInstance().font, "·", x + 10, y + 10, 0xFF888888, false);
         ctx.text(Minecraft.getInstance().font, "·", x + 4,  y + 18, 0xFF888888, false);
     }
 
     private static void renderDimensionLabel(GuiGraphicsExtractor ctx, LocalPlayer player,
-                                              int boxX, int boxY, int size) {
+                                              int boxX, int boxY, int size, int screenHeight) {
         if (DimensionMapTracker.isOverworld(player)) return;
         String label = DimensionMapTracker.dimensionLabel(player);
         var tr = Minecraft.getInstance().font;
         int lw = tr.width(label);
-        ctx.text(tr, label, boxX + size / 2 - lw / 2, boxY + size + 2, 0xFFAAAAAA, true);
+        // Below the box, or inside its bottom edge when there is no room below it.
+        int labelY = boxY + size + 2;
+        if (labelY + 9 > screenHeight) labelY = boxY + size - 11;
+        ctx.text(tr, label, boxX + size / 2 - lw / 2, labelY, 0xFFAAAAAA, true);
     }
 
     private static void renderCoordinates(GuiGraphicsExtractor ctx, LocalPlayer player,
@@ -186,7 +150,7 @@ public class MinimapHud {
     }
 
     private static void renderExpansionArrows(GuiGraphicsExtractor ctx, MapEntryData mapEntry,
-                                               int bx, int by, int size) {
+                                               int bx, int by, int size, boolean outside) {
         var exps = mapEntry.getExpansions();
         int cx = bx + size / 2;
         int cy = by + size / 2;
@@ -199,10 +163,11 @@ public class MinimapHud {
 
         int available = 0xCCFFFF88;
 
-        if (!hasN) ctx.text(tr, "▲", cx - 3, by - 10, available, true);
-        if (!hasS) ctx.text(tr, "▼", cx - 3, by + size + 2, available, true);
-        if (!hasW) ctx.text(tr, "◄", bx - 10, cy - 4, available, true);
-        if (!hasE) ctx.text(tr, "►", bx + size + 2, cy - 4, available, true);
+        // Outside the box when the padding leaves room for it, otherwise just inside its edge.
+        if (!hasN) ctx.text(tr, "▲", cx - 3, outside ? by - 10 : by + 2, available, true);
+        if (!hasS) ctx.text(tr, "▼", cx - 3, outside ? by + size + 2 : by + size - 10, available, true);
+        if (!hasW) ctx.text(tr, "◄", outside ? bx - 10 : bx + 2, cy - 4, available, true);
+        if (!hasE) ctx.text(tr, "►", outside ? bx + size + 2 : bx + size - 10, cy - 4, available, true);
     }
 
     private static boolean hasDir(java.util.List<ExpansionRecord> list, ExpansionRecord.Direction dir) {

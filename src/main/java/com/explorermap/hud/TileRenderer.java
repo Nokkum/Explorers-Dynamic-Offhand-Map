@@ -113,7 +113,7 @@ public final class TileRenderer {
                                           int tileScreenX, int tileScreenY,
                                           float pixSize) {
         Identifier tex = TileTextureCache.getInstance()
-                .getOrUpdate(tile.mapId(), tile.state(), tile.entry());
+                .getOrUpdate(tile.mapId(), tile.view(), tile.entry());
 
         // 1.21.6+ GUI uses a 2D Matrix3x2fStack and render pipelines instead of RenderLayers.
         var pose = context.pose();

@@ -39,7 +39,12 @@ public final class MultiTileCanvas {
         this.worldOriginZ  = rootTileOriginZ + minGridZ * tileBlocks;
     }
 
+    /** Cached on the grid, which is itself cached, so this is cheap to call every frame. */
     public static MultiTileCanvas from(TileGrid grid, MapItemSavedData rootState) {
+        return grid.canvasFor(rootState);
+    }
+
+    static MultiTileCanvas compute(TileGrid grid, MapItemSavedData rootState) {
         int minGX = 0, maxGX = 0, minGZ = 0, maxGZ = 0;
         for (TileGrid.TileEntry t : grid.tiles()) {
             minGX = Math.min(minGX, t.gridX()); maxGX = Math.max(maxGX, t.gridX());
@@ -53,11 +58,11 @@ public final class MultiTileCanvas {
     }
 
     public int worldToCanvasX(double worldX) {
-        return (int)((worldX - worldOriginX) / scale);
+        return (int) Math.floor((worldX - worldOriginX) / scale);
     }
 
     public int worldToCanvasZ(double worldZ) {
-        return (int)((worldZ - worldOriginZ) / scale);
+        return (int) Math.floor((worldZ - worldOriginZ) / scale);
     }
 
     public int defaultScreenOriginX(int screenCentreX, float zoom, float panX) {

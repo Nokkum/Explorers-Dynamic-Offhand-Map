@@ -2,6 +2,7 @@ package com.explorermap.network;
 
 import com.explorermap.data.ClientMapCache;
 import com.explorermap.data.MapIdentity;
+import com.explorermap.expansion.ExpansionHandler;
 import com.explorermap.expansion.ExpansionRecord;
 import com.explorermap.registry.ExplorerMapRegistry;
 import net.fabricmc.api.EnvType;
@@ -16,7 +17,8 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import java.util.ArrayList;
 import java.util.List;
 
-public record SyncExpansionsPayload(MapIdentity root, List<Entry> entries) implements CustomPacketPayload {
+public record SyncExpansionsPayload(MapIdentity root, List<Entry> entries, int paperCost)
+        implements CustomPacketPayload {
 
     public static final int MAX_ENTRIES = ExpansionFamilySync.MAX_FAMILY_MAPS;
 
@@ -38,6 +40,7 @@ public record SyncExpansionsPayload(MapIdentity root, List<Entry> entries) imple
             StreamCodec.composite(
                     MapIdentity.PACKET_CODEC, SyncExpansionsPayload::root,
                     ByteBufCodecs.collection(ArrayList::new, Entry.CODEC, MAX_ENTRIES), SyncExpansionsPayload::entries,
+                    ByteBufCodecs.VAR_INT, SyncExpansionsPayload::paperCost,
                     SyncExpansionsPayload::new
             );
 
@@ -56,6 +59,7 @@ public record SyncExpansionsPayload(MapIdentity root, List<Entry> entries) imple
 
     @Environment(EnvType.CLIENT)
     private static void handleOnClient(SyncExpansionsPayload payload) {
+        ExpansionHandler.setServerPaperCost(payload.paperCost());
         var dimension = payload.root().dimension();
         for (Entry entry : payload.entries()) {
             if (!entry.mapId().dimension().equals(dimension)) continue;

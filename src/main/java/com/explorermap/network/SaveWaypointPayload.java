@@ -35,15 +35,13 @@ public record SaveWaypointPayload(MapIdentity mapId, Waypoint waypoint) implemen
     public static void register() {
         PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC);
         ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) ->
-                context.server().execute(() -> handleOnServer(context.player(), payload)));
+                handleOnServer(context.player(), payload));
     }
 
     private static void handleOnServer(ServerPlayer player, SaveWaypointPayload payload) {
         var offHand = player.getItemInHand(InteractionHand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] SaveWaypoint: rejected from {} - no map in off-hand",
-                    player.getName().getString());
+            RejectLog.warn(player, "SaveWaypoint: no map in off-hand");
             return;
         }
 
@@ -53,46 +51,48 @@ public record SaveWaypointPayload(MapIdentity mapId, Waypoint waypoint) implemen
         var mapState = MapIdentity.resolveAuthorized(
                 player.level().getServer(), savedData, heldRoot, payload.mapId());
         if (mapState == null) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] SaveWaypoint: rejected from {} - map {} is invalid or not accessible from the held map",
-                    player.getName().getString(), payload.mapId().asKey());
+            RejectLog.warn(player, "SaveWaypoint: map {} is invalid or not accessible from the held map",
+                    payload.mapId());
             return;
         }
 
+        // From here on the player is authorized for this map, so a rejection also resyncs their view.
         double wx = payload.waypoint().worldX();
         double wz = payload.waypoint().worldZ();
 
         if (!Double.isFinite(wx) || !Double.isFinite(wz)) {
-            ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: non-finite coordinates rejected from {}",
-                    player.getName().getString());
+            RejectLog.warn(player, "SaveWaypoint: non-finite coordinates");
+            SyncWaypointsPayload.sendTo(player, payload.mapId());
             return;
         }
 
+        // A tile spans 128 pixels, so its edge is 64 * scale blocks from the center.
         int scale   = 1 << mapState.scale;
-        int maxDist = 256 * scale;
+        int maxDist = 64 * scale;
         if (Math.abs(wx - mapState.centerX) > maxDist || Math.abs(wz - mapState.centerZ) > maxDist) {
-            ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: coordinates out of range, rejected");
+            RejectLog.warn(player, "SaveWaypoint: coordinates outside the map");
+            SyncWaypointsPayload.sendTo(player, payload.mapId());
             return;
         }
 
+        // Custom icons are registered on the client only, so the server checks the format, not a registry.
         String iconId = payload.waypoint().iconId();
-        if (!ExplorerMapRegistry.isRegisteredIcon(iconId)) {
-            ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: unknown iconId '{}' rejected from {}",
-                    iconId, player.getName().getString());
+        if (!Waypoint.isAcceptableIconId(iconId)) {
+            RejectLog.warn(player, "SaveWaypoint: bad iconId '{}'", iconId);
+            SyncWaypointsPayload.sendTo(player, payload.mapId());
             return;
         }
 
         String name = payload.waypoint().name().trim();
         if (name.isEmpty() || name.length() > MAX_NAME_LENGTH) {
-            ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: invalid name rejected from {}",
-                    player.getName().getString());
+            RejectLog.warn(player, "SaveWaypoint: invalid name");
+            SyncWaypointsPayload.sendTo(player, payload.mapId());
             return;
         }
 
         UUID incomingId = payload.waypoint().id();
         if (incomingId == null) {
-            ExplorerMapMod.LOGGER.warn("[ExplorerMap] SaveWaypoint: missing waypoint id rejected from {}",
-                    player.getName().getString());
+            RejectLog.warn(player, "SaveWaypoint: missing waypoint id");
             return;
         }
 
@@ -101,23 +101,24 @@ public record SaveWaypointPayload(MapIdentity mapId, Waypoint waypoint) implemen
         Waypoint previous = entry.findWaypoint(incomingId);
 
         boolean editing = previous != null;
-        if (editing && !previous.isOwnedBy(player.getUUID())) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] SaveWaypoint: {} tried to edit a waypoint they do not own",
-                    player.getName().getString());
+        boolean admin = ExplorerMapMod.canManageSystemWaypoints(player);
+        if (editing && !savedData.canManageWaypoint(payload.mapId(), incomingId, player.getUUID(), admin)) {
+            RejectLog.warn(player, "SaveWaypoint: not allowed to edit that waypoint");
+            SyncWaypointsPayload.sendTo(player, payload.mapId());
             return;
         }
 
-        int waypointCapacity = entry.getWaypointCapacity();
-        long ownedWaypointCount = entry.getWaypoints().stream()
-                .filter(wp -> wp.isOwnedBy(player.getUUID()))
-                .count();
-        if (!editing && ownedWaypointCount >= waypointCapacity) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] SaveWaypoint: {} has reached waypoint capacity ({}/{}); insert a compass at a cartography table to add five slots",
-                    player.getName().getString(), ownedWaypointCount, waypointCapacity);
-            SyncWaypointsPayload.sendTo(player, payload.mapId());
-            return;
+        if (!editing) {
+            // Slots belong to the player and the held map, and count waypoints on all of its tiles.
+            var family = ExpansionFamilySync.familyOf(savedData, heldRoot).maps();
+            int waypointCapacity = savedData.waypointCapacity(heldRoot, player.getUUID());
+            int ownedWaypointCount = savedData.ownedWaypointCount(family, player.getUUID());
+            if (ownedWaypointCount >= waypointCapacity) {
+                RejectLog.warn(player, "SaveWaypoint: at waypoint capacity ({}/{}); a compass adds five slots",
+                        ownedWaypointCount, waypointCapacity);
+                SyncWaypointsPayload.sendTo(player, payload.mapId());
+                return;
+            }
         }
 
         UUID id = editing ? previous.id() : incomingId;

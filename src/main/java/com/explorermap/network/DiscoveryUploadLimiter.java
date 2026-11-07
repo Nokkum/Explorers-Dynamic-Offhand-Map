@@ -96,14 +96,6 @@ public final class DiscoveryUploadLimiter {
         if (playerId != null) players.remove(playerId);
     }
 
-    public void clear() {
-        players.clear();
-    }
-
-    public int trackedPlayers() {
-        return players.size();
-    }
-
     private void refill(PlayerState state, long now) {
         long elapsed = Math.max(0L, now - state.refilledAt);
         state.refilledAt = now;

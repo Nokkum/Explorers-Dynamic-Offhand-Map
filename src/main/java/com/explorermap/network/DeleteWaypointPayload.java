@@ -8,7 +8,6 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -34,15 +33,13 @@ public record DeleteWaypointPayload(MapIdentity mapId, UUID waypointId) implemen
     public static void register() {
         PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC);
         ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) ->
-                context.server().execute(() -> handleOnServer(context.player(), payload)));
+                handleOnServer(context.player(), payload));
     }
 
     private static void handleOnServer(ServerPlayer player, DeleteWaypointPayload payload) {
         var offHand = player.getItemInHand(InteractionHand.OFF_HAND);
         if (!ExplorerMapMod.isFilledMap(offHand)) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] DeleteWaypoint: rejected from {} - no map in off-hand",
-                    player.getName().getString());
+            RejectLog.warn(player, "DeleteWaypoint: no map in off-hand");
             return;
         }
 
@@ -52,16 +49,15 @@ public record DeleteWaypointPayload(MapIdentity mapId, UUID waypointId) implemen
         var mapState = MapIdentity.resolveAuthorized(
                 player.level().getServer(), savedData, heldRoot, payload.mapId());
         if (mapState == null) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] DeleteWaypoint: rejected from {} - map {} is invalid or not accessible from the held map",
-                    player.getName().getString(), payload.mapId().asKey());
+            RejectLog.warn(player, "DeleteWaypoint: map {} is invalid or not accessible from the held map",
+                    payload.mapId());
             return;
         }
 
-        if (!savedData.canManageWaypoint(payload.mapId(), payload.waypointId(), player.getUUID())) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] DeleteWaypoint: {} tried to delete a waypoint they do not own",
-                    player.getName().getString());
+        boolean admin = ExplorerMapMod.canManageSystemWaypoints(player);
+        if (!savedData.canManageWaypoint(payload.mapId(), payload.waypointId(), player.getUUID(), admin)) {
+            RejectLog.warn(player, "DeleteWaypoint: not allowed to delete that waypoint");
+            SyncWaypointsPayload.sendTo(player, payload.mapId());
             return;
         }
 

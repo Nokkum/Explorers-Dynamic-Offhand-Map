@@ -1,6 +1,7 @@
 package com.explorermap.network;
 
 import com.explorermap.ExplorerMapMod;
+import com.explorermap.config.ExplorerMapServerConfig;
 import com.explorermap.data.ExplorerMapSavedData;
 import com.explorermap.data.MapEntryData;
 import com.explorermap.data.MapIdentity;
@@ -76,9 +77,9 @@ public final class ExpansionFamilySync {
             List<ExpansionRecord> expansions = entry.getExpansions();
             if (!expansions.isEmpty()) entries.add(new SyncExpansionsPayload.Entry(mapId, expansions));
         }
-        if (!entries.isEmpty()) {
-            ServerPlayNetworking.send(player, new SyncExpansionsPayload(root, entries));
-        }
+        // Always sent: the client needs the paper cost even before the first expansion exists.
+        ServerPlayNetworking.send(player, new SyncExpansionsPayload(
+                root, entries, ExplorerMapServerConfig.expansionPaperCost()));
 
         Set<MapIdentity> synced = SYNCED.computeIfAbsent(playerId, id -> ConcurrentHashMap.newKeySet());
         synced.add(root);
@@ -89,9 +90,7 @@ public final class ExpansionFamilySync {
             if (entry == null || MapIdentity.resolveAndVerify(server, mapId) == null) continue;
             synced.add(mapId);
 
-            if (!savedData.visibleWaypoints(mapId, playerId).isEmpty()
-                    || entry.getWaypointCapacity() > 0
-                    || entry.getWaypointShareCharges() > 0) {
+            if (!savedData.visibleWaypoints(mapId, playerId).isEmpty()) {
                 SyncWaypointsPayload.sendTo(player, mapId);
             }
             if (hasAnyBit(savedData.getPlayerDiscovery(mapId, playerId))) {

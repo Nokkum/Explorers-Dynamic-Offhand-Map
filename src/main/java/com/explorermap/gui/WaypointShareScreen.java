@@ -5,7 +5,7 @@ import com.explorermap.network.WaypointSharePayload;
 import com.explorermap.waypoint.Waypoint;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import com.explorermap.network.ClientNet;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.components.Button;
@@ -52,7 +52,7 @@ public class WaypointShareScreen extends Screen {
     private void share() {
         String target = playerName.getValue().trim();
         if (target.isEmpty() || minecraft == null) return;
-        ClientPlayNetworking.send(new WaypointSharePayload(mapId, waypoint.id(), target));
+        ClientNet.send(new WaypointSharePayload(mapId, waypoint.id(), target));
         minecraft.gui.setScreen(parent);
     }
 
@@ -69,7 +69,7 @@ public class WaypointShareScreen extends Screen {
                 Component.translatable("screen.explorermap.waypoint_share"),
                 width / 2, boxY + 10, 0xFFFFFFFF);
         context.text(font,
-                Component.translatable("explorermap.waypoint.share_target", waypoint.name()),
+                Component.translatable("explorermap.waypoint.share_target", GuiText.waypointName(waypoint)),
                 boxX + 12, boxY + 26, 0xFFAAAAAA, true);
     }
 

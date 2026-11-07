@@ -44,7 +44,12 @@ public final class ExplorerMapApi {
         return generation;
     }
 
+    public static boolean hasBiomeColors() {
+        return !BIOME_COLORS.isEmpty();
+    }
+
     public static int colorFor(ClientLevel world, BlockPos samplePos, int vanillaColor) {
+        if (BIOME_COLORS.isEmpty()) return vanillaColor;
         var biomes = world.registryAccess().lookupOrThrow(Registries.BIOME);
         Holder<Biome> biome = world.getBiome(samplePos);
         Identifier biomeId = biomes.getKey(biome.value());

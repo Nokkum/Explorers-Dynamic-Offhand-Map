@@ -2,16 +2,18 @@ package com.explorermap.data;
 
 import com.explorermap.ExplorerMapMod;
 import com.explorermap.expansion.ExpansionRecord;
-import com.explorermap.registry.ExplorerMapRegistry;
 import com.explorermap.waypoint.Waypoint;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 
 public final class MapEntryData {
 
@@ -21,20 +23,30 @@ public final class MapEntryData {
 
     private static final int MAX_WAYPOINTS_ON_LOAD = 4096;
     private static final int MAX_EXPANSIONS_ON_LOAD = 4096;
-    private static final int MAX_PENDING_STRUCTURE_CHUNKS = 4096;
+    private static final int MAX_PENDING_STRUCTURE_CHUNKS = 16384;
 
     private final byte[] discoveredPixels;
-    private transient byte[] recentPixels;
-    private transient boolean hasFadingPixels = false;
+    private byte[] recentPixels;
+    private boolean hasFadingPixels = false;
+    private int fadeTicks = 0;
 
     private final List<ExpansionRecord> expansions;
     private final List<Waypoint> waypoints;
     private final Set<Long> pendingStructureChunks;
+    // Client display values for the local player's allowance; on the server only used to read legacy saves.
     private int waypointCapacity;
     private int waypointShareCharges;
+    private boolean canManageSystemWaypoints;
 
-    private transient long discoveryGeneration = 0L;
-    private transient long visualGeneration = 0L;
+    private long discoveryGeneration = 0L;
+    private long visualGeneration = 0L;
+
+    /** Bumped whenever any entry's expansions change, so cached tile grids can be invalidated. */
+    private static volatile long topologyGeneration = 0L;
+
+    public static long topologyGeneration() {
+        return topologyGeneration;
+    }
 
     public MapEntryData() {
         this.discoveredPixels = new byte[BYTE_COUNT];
@@ -87,7 +99,7 @@ public final class MapEntryData {
         if (changed) {
             discoveryGeneration++;
             visualGeneration++;
-            java.util.Arrays.fill(recentPixels, (byte) 0xFF);
+            Arrays.fill(recentPixels, (byte) 0xFF);
             hasFadingPixels = true;
         }
         return changed;
@@ -113,6 +125,11 @@ public final class MapEntryData {
         return discoveryGeneration;
     }
 
+    /** Marks the tile's colors as changed so its texture is rebuilt. */
+    public void touchVisual() {
+        visualGeneration++;
+    }
+
     public long getVisualGeneration() {
         return visualGeneration;
     }
@@ -134,7 +151,9 @@ public final class MapEntryData {
             changed = true;
             if (next != 0) anyRemaining = true;
         }
-        if (changed) visualGeneration++;
+        fadeTicks++;
+        // Rebuilding the texture is expensive, so the fade only repaints every 4th tick.
+        if (changed && (!anyRemaining || (fadeTicks & 3) == 0)) visualGeneration++;
         hasFadingPixels = anyRemaining;
         return changed;
     }
@@ -171,7 +190,7 @@ public final class MapEntryData {
         if (changed) {
             discoveryGeneration++;
             visualGeneration++;
-            java.util.Arrays.fill(recentPixels, (byte) 0);
+            Arrays.fill(recentPixels, (byte) 0);
             hasFadingPixels = false;
         }
         return changed;
@@ -187,17 +206,13 @@ public final class MapEntryData {
             return;
         }
         expansions.removeIf(existing -> existing.direction() == record.direction());
-        if (expansions.size() >= ExpansionRecord.Direction.values().length) {
-            ExplorerMapMod.LOGGER.warn(
-                    "[ExplorerMap] Refusing to add more than {} expansions to a single map",
-                    ExpansionRecord.Direction.values().length);
-            return;
-        }
         expansions.add(record);
+        topologyGeneration++;
     }
 
     public void replaceExpansions(List<ExpansionRecord> records) {
         expansions.clear();
+        topologyGeneration++;
         for (ExpansionRecord record : records) addExpansion(record);
     }
 
@@ -240,62 +255,67 @@ public final class MapEntryData {
         return waypointShareCharges;
     }
 
-    public void setWaypointCapacity(int capacity, int shareCharges) {
+    public boolean canManageSystemWaypoints() {
+        return canManageSystemWaypoints;
+    }
+
+    /** Client side: the local player's allowance as reported by the server. */
+    public void setAllowance(int capacity, int shareCharges, boolean canManageSystem) {
         waypointCapacity = Math.max(0, capacity);
         waypointShareCharges = Math.max(0, shareCharges);
+        canManageSystemWaypoints = canManageSystem;
     }
 
-    public void addWaypointCapacity() {
-        waypointCapacity += 5;
-        waypointShareCharges++;
-    }
-
-    public boolean consumeWaypointShareCharge() {
-        if (waypointShareCharges <= 0) return false;
-        waypointShareCharges--;
-        return true;
+    void clearLegacyAllowance() {
+        waypointCapacity = 0;
+        waypointShareCharges = 0;
     }
 
     public Set<Long> getPendingStructureChunks() {
         return Set.copyOf(pendingStructureChunks);
     }
 
-    public void addPendingStructureChunk(long chunkPosLong) {
-        if (pendingStructureChunks.size() >= MAX_PENDING_STRUCTURE_CHUNKS) return;
-        pendingStructureChunks.add(chunkPosLong);
+    /** @return false if the pending list is full and the chunk could not be queued. */
+    public boolean addPendingStructureChunk(long chunkPosLong) {
+        if (pendingStructureChunks.contains(chunkPosLong)) return true;
+        if (pendingStructureChunks.size() >= MAX_PENDING_STRUCTURE_CHUNKS) return false;
+        return pendingStructureChunks.add(chunkPosLong);
     }
 
     public void removePendingStructureChunk(long chunkPosLong) {
         pendingStructureChunks.remove(chunkPosLong);
     }
 
-    private static final Codec<byte[]> BITMASK_CODEC = CodecUtil.boundedList(
-            Codec.LONG, BYTE_COUNT / 8, "discovered_pixels").xmap(
-            longs -> {
+    // Stored as a byte array (older saves used a list of longs, which still decodes).
+    private static final Codec<byte[]> BITMASK_CODEC = Codec.LONG_STREAM.xmap(
+            stream -> {
+                long[] longs = stream.limit(BYTE_COUNT / 8).toArray();
                 byte[] arr = new byte[BYTE_COUNT];
-                int n = Math.min(longs.size(), BYTE_COUNT / 8);
-                for (int i = 0; i < n; i++) {
-                    long v = longs.get(i);
-                    for (int b = 0; b < 8; b++) arr[i * 8 + b] = (byte) (v >> (b * 8));
+                for (int i = 0; i < longs.length; i++) {
+                    for (int b = 0; b < 8; b++) arr[i * 8 + b] = (byte) (longs[i] >> (b * 8));
                 }
                 return arr;
             },
             arr -> {
-                List<Long> longs = new ArrayList<>(BYTE_COUNT / 8);
-                for (int i = 0; i < BYTE_COUNT / 8; i++) {
+                long[] longs = new long[BYTE_COUNT / 8];
+                for (int i = 0; i < longs.length; i++) {
                     long v = 0;
                     for (int b = 0; b < 8; b++) v |= ((long) (arr[i * 8 + b] & 0xFF)) << (b * 8);
-                    longs.add(v);
+                    longs[i] = v;
                 }
-                return longs;
+                return LongStream.of(longs);
             }
+    );
+
+    private static final Codec<List<Long>> PENDING_CHUNKS_CODEC = Codec.LONG_STREAM.xmap(
+            stream -> stream.limit(MAX_PENDING_STRUCTURE_CHUNKS).boxed().collect(Collectors.toList()),
+            list -> list.stream().mapToLong(Long::longValue)
     );
 
     private static boolean isValidOnLoad(Waypoint wp) {
         if (wp == null || wp.id() == null) return false;
         if (wp.name() == null || wp.name().isBlank() || wp.name().length() > Waypoint.MAX_NAME_LENGTH) return false;
         if (wp.iconId() == null || wp.iconId().isBlank() || wp.iconId().length() > Waypoint.MAX_ICON_ID_LENGTH) return false;
-        if (!ExplorerMapRegistry.isRegisteredIcon(wp.iconId())) return false;
         if (!Double.isFinite(wp.worldX()) || !Double.isFinite(wp.worldZ())) return false;
         return true;
     }
@@ -307,11 +327,12 @@ public final class MapEntryData {
                             .fieldOf("expansions").forGetter(d -> d.expansions),
                     CodecUtil.boundedList(Waypoint.CODEC, MAX_WAYPOINTS_ON_LOAD, "waypoints")
                             .fieldOf("waypoints").forGetter(d -> d.waypoints),
-                    CodecUtil.boundedList(Codec.LONG, MAX_PENDING_STRUCTURE_CHUNKS, "pending_structure_chunks")
+                    PENDING_CHUNKS_CODEC
                             .optionalFieldOf("pending_structure_chunks", List.of())
                             .forGetter(d -> List.copyOf(d.pendingStructureChunks)),
-                    Codec.INT.optionalFieldOf("waypoint_capacity", 0).forGetter(d -> d.waypointCapacity),
-                    Codec.INT.optionalFieldOf("waypoint_share_charges", 0).forGetter(d -> d.waypointShareCharges)
+                    // Legacy per-map allowance: read for migration only, never written back.
+                    Codec.INT.optionalFieldOf("waypoint_capacity", 0).forGetter(d -> 0),
+                    Codec.INT.optionalFieldOf("waypoint_share_charges", 0).forGetter(d -> 0)
             ).apply(instance, (pixels, expansions, waypoints, pendingChunks, capacity, shareCharges) -> {
                 List<ExpansionRecord> safeExpansions = new ArrayList<>(expansions.size());
                 Set<ExpansionRecord.Direction> seenDirections = new HashSet<>();
@@ -323,10 +344,17 @@ public final class MapEntryData {
 
                 List<Waypoint> safeWaypoints = new ArrayList<>(waypoints.size());
                 Set<UUID> seenIds = new HashSet<>();
+                int dropped = 0;
                 for (Waypoint wp : waypoints) {
-                    if (!isValidOnLoad(wp)) continue;
-                    if (!seenIds.add(wp.id())) continue;
+                    if (!isValidOnLoad(wp) || !seenIds.add(wp.id())) {
+                        dropped++;
+                        continue;
+                    }
                     safeWaypoints.add(wp);
+                }
+                if (dropped > 0) {
+                    ExplorerMapMod.LOGGER.warn("[ExplorerMap] Dropped {} invalid or duplicate waypoints while loading; "
+                            + "they will be gone after the next save", dropped);
                 }
 
                 MapEntryData data = new MapEntryData(pixels, safeExpansions, safeWaypoints, new HashSet<>(pendingChunks));
