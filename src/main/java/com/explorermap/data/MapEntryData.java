@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -41,7 +42,7 @@ public final class MapEntryData {
     private long discoveryGeneration = 0L;
     private long visualGeneration = 0L;
 
-    /** Bumped whenever any entry's expansions change, so cached tile grids can be invalidated. */
+    // Bumped whenever any entry's expansions change, so cached tile grids can be invalidated.
     private static volatile long topologyGeneration = 0L;
 
     public static long topologyGeneration() {
@@ -125,7 +126,7 @@ public final class MapEntryData {
         return discoveryGeneration;
     }
 
-    /** Marks the tile's colors as changed so its texture is rebuilt. */
+    // Marks the tile's colors as changed so its texture is rebuilt.
     public void touchVisual() {
         visualGeneration++;
     }
@@ -196,6 +197,17 @@ public final class MapEntryData {
         return changed;
     }
 
+    // A copy of this entry for another map: discovery, waypoints and pending chunks are carried over, and
+    // expansion targets are translated through {@code remap} (a target without a mapping is dropped).
+    MapEntryData copyRemapped(Map<MapIdentity, MapIdentity> remap) {
+        List<ExpansionRecord> mapped = new ArrayList<>(expansions.size());
+        for (ExpansionRecord record : expansions) {
+            MapIdentity target = remap.get(record.target());
+            if (target != null) mapped.add(new ExpansionRecord(record.direction(), target, record.highDetail()));
+        }
+        return new MapEntryData(discoveredPixels, mapped, waypoints, pendingStructureChunks);
+    }
+
     public List<ExpansionRecord> getExpansions() {
         return List.copyOf(expansions);
     }
@@ -259,7 +271,7 @@ public final class MapEntryData {
         return canManageSystemWaypoints;
     }
 
-    /** Client side: the local player's allowance as reported by the server. */
+    // Client side: the local player's allowance as reported by the server.
     public void setAllowance(int capacity, int shareCharges, boolean canManageSystem) {
         waypointCapacity = Math.max(0, capacity);
         waypointShareCharges = Math.max(0, shareCharges);
@@ -275,7 +287,7 @@ public final class MapEntryData {
         return Set.copyOf(pendingStructureChunks);
     }
 
-    /** @return false if the pending list is full and the chunk could not be queued. */
+    // @return false if the pending list is full and the chunk could not be queued.
     public boolean addPendingStructureChunk(long chunkPosLong) {
         if (pendingStructureChunks.contains(chunkPosLong)) return true;
         if (pendingStructureChunks.size() >= MAX_PENDING_STRUCTURE_CHUNKS) return false;

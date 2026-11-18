@@ -80,12 +80,12 @@ public final class CartographyTableScreen extends Screen {
 
         addRenderableWidget(Button.builder(Component.translatable("label.explorermap.cancel"),
                         button -> onClose())
-                .bounds(panelX + panelWidth / 2 - 40, panelY + 118, 80, 20).build());
+                .bounds(panelX + MARGIN, panelY + 118, inner, 20).build());
 
         lastSignature = signature();
     }
 
-    /** Everything the buttons' enabled state depends on, so they can be rebuilt when it changes. */
+    // Everything the buttons' enabled state depends on, so they can be rebuilt when it changes.
     private int signature() {
         var player = minecraft != null ? minecraft.player : null;
         if (player == null) return -1;

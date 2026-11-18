@@ -121,7 +121,7 @@ public class ExplorerMapSavedData extends SavedData {
         static final MergeResult NONE = new MergeResult(false, Set.of());
     }
 
-    /** @return pixels newly discovered by anyone (the aggregate delta). */
+    // @return pixels newly discovered by anyone (the aggregate delta).
     public Set<Integer> mergePlayerBitmask(MapIdentity mapId, UUID playerId, byte[] bitmask) {
         return merge(mapId, playerId, bitmask).aggregateDelta();
     }
@@ -162,11 +162,38 @@ public class ExplorerMapSavedData extends SavedData {
         return new MergeResult(true, newlyDiscovered);
     }
 
-    /** @return true if the recipient's own discovery changed (even if others had already found those pixels). */
+    // @return true if the recipient's own discovery changed (even if others had already found those pixels).
     public boolean sharePlayerDiscovery(MapIdentity mapId, UUID from, UUID recipient) {
         if (from == null || recipient == null) return false;
         byte[] source = getPlayerDiscovery(mapId, from);
         return merge(mapId, recipient, source).playerChanged();
+    }
+
+    public void copyMapData(MapIdentity from, MapIdentity to, Map<MapIdentity, MapIdentity> remap) {
+        MapEntryData entry = entries.get(from);
+        if (entry != null) entries.put(to, entry.copyRemapped(remap));
+
+        Map<String, byte[]> discoveries = playerDiscoveries.get(from);
+        if (discoveries != null) {
+            Map<String, byte[]> copied = new HashMap<>();
+            discoveries.forEach((uuid, bits) -> copied.put(uuid, bits.clone()));
+            playerDiscoveries.put(to, copied);
+        }
+
+        Map<String, Set<UUID>> shares = waypointShares.get(from);
+        if (shares != null) {
+            Map<String, Set<UUID>> copied = new HashMap<>();
+            shares.forEach((uuid, ids) -> copied.put(uuid, new HashSet<>(ids)));
+            waypointShares.put(to, copied);
+        }
+
+        Map<String, Allowance> players = allowances.get(from);
+        if (players != null) {
+            Map<String, Allowance> copied = new HashMap<>();
+            players.forEach((uuid, a) -> copied.put(uuid, new Allowance(a.capacity, a.shareCharges)));
+            allowances.put(to, copied);
+        }
+        setDirty();
     }
 
     public void addExpansion(MapIdentity mapId, ExpansionRecord record) {
@@ -220,7 +247,7 @@ public class ExplorerMapSavedData extends SavedData {
         return true;
     }
 
-    /** Waypoints owned by the player across the given maps (a root map and its expansion tiles). */
+    // Waypoints owned by the player across the given maps (a root map and its expansion tiles).
     public int ownedWaypointCount(Collection<MapIdentity> maps, UUID player) {
         int count = 0;
         for (MapIdentity id : maps) {
@@ -258,7 +285,7 @@ public class ExplorerMapSavedData extends SavedData {
         setDirty();
     }
 
-    /** Owners manage their waypoints; admins can additionally manage system and legacy ones. */
+    // Owners manage their waypoints; admins can additionally manage system and legacy ones.
     public boolean canManageWaypoint(MapIdentity mapId, UUID waypointId, UUID playerId, boolean admin) {
         var entry = get(mapId);
         if (entry == null || playerId == null) return false;

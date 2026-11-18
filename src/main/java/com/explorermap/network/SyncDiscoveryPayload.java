@@ -6,6 +6,7 @@ import com.explorermap.data.ExplorerMapSavedData;
 import com.explorermap.data.MapEntryData;
 import com.explorermap.data.MapIdentity;
 import com.explorermap.data.MapPixels;
+import com.explorermap.lock.MapLocks;
 import com.explorermap.registry.ExplorerMapRegistry;
 import com.explorermap.structure.StructureWaypointDetector;
 import net.fabricmc.api.EnvType;
@@ -38,7 +39,7 @@ public final class SyncDiscoveryPayload {
     private static final DiscoveryUploadTracker<MapIdentity> UPLOAD_TRACKER =
             new DiscoveryUploadTracker<>(System::nanoTime);
 
-    /** Farthest a player can plausibly have seen a pixel from where they are now (ray range plus movement). */
+    // Farthest a player can plausibly have seen a pixel from where they are now (ray range plus movement).
     private static final double MAX_REPORT_RANGE = 384.0;
 
     private static long lastUploadWindowNanos = 0L;
@@ -80,6 +81,10 @@ public final class SyncDiscoveryPayload {
             }
 
             MapIdentity heldRoot = MapIdentity.ofStack(offHand, sender.level());
+
+            // A locked map is frozen: nothing new is discovered on it or on its tiles.
+            MapItemSavedData heldState = MapIdentity.stateOf(offHand, sender.level());
+            if (heldState != null && MapLocks.isLocked(heldState)) return;
             var savedData = ExplorerMapSavedData.get(server);
 
             var mapState = MapIdentity.resolveAuthorized(server, savedData, heldRoot, payload.mapId());

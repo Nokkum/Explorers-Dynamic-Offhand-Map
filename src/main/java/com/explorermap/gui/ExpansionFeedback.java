@@ -40,6 +40,7 @@ public final class ExpansionFeedback {
             case NO_TABLE                 -> "explorermap.expansion.fail.no_table";
             case ON_COOLDOWN              -> "explorermap.expansion.fail.on_cooldown";
             case FAMILY_FULL              -> "explorermap.expansion.fail.family_full";
+            case MAP_LOCKED               -> "explorermap.expansion.fail.map_locked";
         };
         return Component.translatable(key).getString();
     }

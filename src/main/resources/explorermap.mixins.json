@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.explorermap.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MapItemMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

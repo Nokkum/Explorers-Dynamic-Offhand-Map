@@ -3,6 +3,7 @@ package com.explorermap.expansion;
 import com.explorermap.ExplorerMapMod;
 import com.explorermap.data.ClientMapCache;
 import com.explorermap.data.MapIdentity;
+import com.explorermap.lock.MapLocks;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.player.LocalPlayer;
@@ -21,7 +22,7 @@ public final class ExpansionHandler {
 
     private ExpansionHandler() {}
 
-    /** The server decides the cost, so the client only shows what the server last reported. */
+    // The server decides the cost, so the client only shows what the server last reported.
     public static void setServerPaperCost(int cost) {
         serverPaperCost = Math.max(1, cost);
     }
@@ -30,7 +31,7 @@ public final class ExpansionHandler {
         serverPaperCost = 1;
     }
 
-    /** The nearest cartography table in reach, or null. Reach matches the server's check. */
+    // The nearest cartography table in reach, or null. Reach matches the server's check.
     public static BlockPos findNearbyTable(LocalPlayer player) {
         var level = player.level();
         BlockPos origin = player.blockPosition();
@@ -50,6 +51,8 @@ public final class ExpansionHandler {
     }
 
     public static boolean canExpand(LocalPlayer player, boolean highDetail) {
+        // A locked map is frozen; the server refuses to expand it as well.
+        if (MapLocks.isLocked(player.getItemInHand(InteractionHand.OFF_HAND), player.level())) return false;
         if (player.isCreative()) return true;
 
         var inv = player.getInventory();

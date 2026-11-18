@@ -28,7 +28,7 @@ public class ExplorerMapMod implements ModInitializer {
     public static final String MOD_ID = "explorermap";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    /** Squared distance within which a cartography table counts as in reach (server and client agree). */
+    // Squared distance within which a cartography table counts as in reach (server and client agree).
     public static final double TABLE_REACH_SQR = 64.0;
 
     @Override
@@ -57,7 +57,7 @@ public class ExplorerMapMod implements ModInitializer {
         LOGGER.info("[ExplorerMap] Common init complete.");
     }
 
-    /** Operators (gamemaster permission) may edit and delete system waypoints. */
+    // Operators (gamemaster permission) may edit and delete system waypoints.
     public static boolean canManageSystemWaypoints(ServerPlayer player) {
         return player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER);
     }

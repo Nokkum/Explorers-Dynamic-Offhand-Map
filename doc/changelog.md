@@ -1,5 +1,10 @@
 <h1 align="center"> Changelog </h1>
 
+# v2.4.0
+- Integrated vanilla map locking
+- Locking follows vanilla: your off-hand map becomes a locked copy under a new map ID, and one glass pane is consumed. If you hold a stack of the same map, only one is locked.
+- Everything the mod stores for the map is copied to the locked one: discovery, waypoints and their shares, and waypoint capacity. Every expansion tile is copied too, so the locked map is a full snapshot. The copies stay out of the shared tile index, so other maps never expand into them.
+
 # v2.3.0
 ### Security
 - Capacity packet checks distance before reading the block.

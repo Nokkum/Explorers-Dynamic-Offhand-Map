@@ -9,6 +9,7 @@ import com.explorermap.dimension.DimensionMapTracker;
 import com.explorermap.expansion.MultiTileCanvas;
 import com.explorermap.expansion.TileGrid;
 import com.explorermap.expansion.TileMapView;
+import com.explorermap.lock.MapLocks;
 import com.explorermap.network.ClientNet;
 import com.explorermap.network.SyncDiscoveryPayload;
 import net.fabricmc.api.EnvType;
@@ -49,6 +50,9 @@ public class ExplorationEngine {
 
         MapItemSavedData mapState = MapIdentity.stateOf(offHand, client.level);
         if (mapState == null) return;
+
+        // A locked map is frozen, so nothing is discovered on it.
+        if (MapLocks.isLocked(mapState)) return;
 
         if (!DimensionMapTracker.isMapRelevantForCurrentDimension(player, mapState)) return;
 
@@ -93,10 +97,8 @@ public class ExplorationEngine {
         }
     }
 
-    /**
-     * Fog off: everything around the player counts as discovered. Only pixels within ray range are marked,
-     * because the server ignores uploaded pixels the player couldn't have seen from where they stand.
-     */
+    // Fog off: everything around the player counts as discovered. Only pixels within ray range are marked,
+    // because the server ignores uploaded pixels the player couldn't have seen from where they stand.
     private static void markVisitedArea(LocalPlayer player, TileGrid grid) {
         double px = player.getX(), pz = player.getZ();
         for (TileGrid.TileEntry tile : grid.tiles()) {

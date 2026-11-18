@@ -10,6 +10,8 @@
 
   "environment": "*",
 
+  "mixins": ["explorermap.mixins.json"],
+
   "entrypoints": {
     "main":    ["com.explorermap.ExplorerMapMod"],
     "client":  ["com.explorermap.ExplorerMapClient"],

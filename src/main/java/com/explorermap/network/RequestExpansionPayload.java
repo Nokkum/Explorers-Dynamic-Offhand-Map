@@ -5,6 +5,7 @@ import com.explorermap.config.ExplorerMapServerConfig;
 import com.explorermap.data.ExplorerMapSavedData;
 import com.explorermap.data.MapIdentity;
 import com.explorermap.expansion.ExpansionRecord;
+import com.explorermap.lock.MapLocks;
 import com.explorermap.registry.ExplorerMapRegistry;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -87,6 +88,13 @@ public record RequestExpansionPayload(
         if (mapState == null) {
             ExpansionFailedPayload.sendTo(player, payload.direction(),
                     ExpansionFailedPayload.Reason.NO_MAP_IN_OFFHAND);
+            return;
+        }
+
+        // Like at the vanilla table, a locked map cannot be zoomed out; here it cannot be expanded.
+        if (MapLocks.isLocked(mapState)) {
+            ExpansionFailedPayload.sendTo(player, payload.direction(),
+                    ExpansionFailedPayload.Reason.MAP_LOCKED);
             return;
         }
 

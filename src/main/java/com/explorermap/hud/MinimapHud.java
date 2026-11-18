@@ -9,6 +9,7 @@ import com.explorermap.dimension.DimensionMapTracker;
 import com.explorermap.expansion.ExpansionRecord;
 import com.explorermap.expansion.MultiTileCanvas;
 import com.explorermap.expansion.TileGrid;
+import com.explorermap.lock.MapLocks;
 import com.explorermap.waypoint.Waypoint;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -82,7 +83,7 @@ public class MinimapHud {
 
         renderDimensionLabel(context, player, boxX, boxY, size, sh);
 
-        if (cfg.showExpansionArrows) {
+        if (cfg.showExpansionArrows && !MapLocks.isLocked(mapState)) {
             renderExpansionArrows(context, mapEntry, boxX, boxY, size, padding >= 12);
         }
 

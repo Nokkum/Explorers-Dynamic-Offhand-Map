@@ -25,7 +25,8 @@ public record ExpansionFailedPayload(ExpansionRecord.Direction direction, Reason
         CYCLE_DETECTED,
         NO_TABLE,
         ON_COOLDOWN,
-        FAMILY_FULL;
+        FAMILY_FULL,
+        MAP_LOCKED;
 
         private static final Reason[] VALUES = values();
 
