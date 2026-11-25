@@ -1,6 +1,7 @@
 package com.explorermap.interaction;
 
 import com.explorermap.ExplorerMapMod;
+import com.explorermap.banner.BannerMapActions;
 import com.explorermap.data.MapIdentity;
 import com.explorermap.network.ExpansionFamilySync;
 import com.explorermap.network.SyncDiscoveryPayload;
@@ -10,6 +11,7 @@ import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.InteractionHand;
@@ -19,6 +21,20 @@ public final class ExplorerMapInteractions {
     private ExplorerMapInteractions() {}
 
     public static void registerCommon() {
+        // A filled map used on a banner adds the banner's name to the map, or removes it again, as in vanilla.
+        // The click is claimed here, so vanilla does not also add its own marker with the banner's icon.
+        UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
+            ItemStack held = player.getItemInHand(hand);
+            if (!ExplorerMapMod.isFilledMap(held)
+                    || !world.getBlockState(hit.getBlockPos()).is(BlockTags.BANNERS)) {
+                return InteractionResult.PASS;
+            }
+            if (!world.isClientSide() && player instanceof ServerPlayer serverPlayer) {
+                BannerMapActions.toggle(serverPlayer, held, hit.getBlockPos());
+            }
+            return InteractionResult.SUCCESS;
+        });
+
         UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
             if (!world.getBlockState(hit.getBlockPos()).is(Blocks.CARTOGRAPHY_TABLE)) {
                 return InteractionResult.PASS;

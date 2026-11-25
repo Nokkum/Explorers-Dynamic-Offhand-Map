@@ -1,5 +1,17 @@
 <h1 align="center"> Changelog </h1>
 
+# v2.5.0
+- added `BannerLabels`: reserved banner icon IDs, per-position UUID, lodestone large-label tag, name/icon helpers, 128-per-map limit.
+- added `BannerMapActions`: toggle banner name on/off a map; periodic tick refreshes labels (removes gone/unnamed, updates renamed/lodestone banners); skips locked maps and unloaded chunks.
+- `ServerEventHandler`: registers the tick.
+- `ExplorerMapInteractions`: intercepts map-on-banner use, claims click so vanilla doesn't add its own marker.
+- `WaypointIconRenderer`: banner labels draw as centered text (2x on lodestone), no icon.
+- Lang: 4 new keys. New block tag file with lodestone.
+- `ExplorerMapSavedData.copyForRescale` now carries in-bounds waypoints, shares, and allowances to zoomed-out map; drops discovery/expansions.
+-`MapEntryData.copyWaypointsOnly`: blank discovery, kept waypoints only.
+-`MapLockHook` → `MapPostProcessHook`: now handles both `LOCK` and `SCALE`, split into `carryToLocked` / `carryToZoomedOut`.
+- Updated `MapItemMixin` to renamed hook.
+
 # v2.4.0
 - Integrated vanilla map locking
 - Locking follows vanilla: your off-hand map becomes a locked copy under a new map ID, and one glass pane is consumed. If you hold a stack of the same map, only one is locked.

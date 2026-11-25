@@ -1,5 +1,6 @@
 package com.explorermap;
 
+import com.explorermap.banner.BannerMapActions;
 import com.explorermap.data.ExplorerMapSavedData;
 import com.explorermap.data.MapIdentity;
 import com.explorermap.network.ExpansionFamilySync;
@@ -48,6 +49,7 @@ public final class ServerEventHandler {
             TileColorSync.forget(playerId);
         });
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            BannerMapActions.tick(server);
             if (++offHandCheckCounter >= OFFHAND_CHECK_INTERVAL_TICKS) {
                 offHandCheckCounter = 0;
                 checkOffHandChanges(server);

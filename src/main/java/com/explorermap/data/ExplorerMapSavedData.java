@@ -196,6 +196,45 @@ public class ExplorerMapSavedData extends SavedData {
         setDirty();
     }
 
+    // A zoomed-out map is a fresh, blank map at another scale: vanilla keeps no explored area, and the map's pixels
+    // cover different blocks. So only what is tied to world positions or to the player follows it: the waypoints
+    // inside the new bounds, who they are shared with, and each player's waypoint slots and share charges.
+    // Discovery starts over to match the blank map, and expansion tiles stay with the old map (they are at its scale).
+    // @return how many waypoints were carried over
+    public int copyForRescale(MapIdentity from, MapIdentity to, int centerX, int centerZ, int blocksPerPixel) {
+        int maxDist = 64 * blocksPerPixel;
+        Set<UUID> carried = new HashSet<>();
+
+        MapEntryData entry = entries.get(from);
+        if (entry != null) {
+            MapEntryData copy = entry.copyWaypointsOnly(wp ->
+                    Math.abs(wp.worldX() - centerX) <= maxDist && Math.abs(wp.worldZ() - centerZ) <= maxDist);
+            copy.getWaypoints().forEach(wp -> carried.add(wp.id()));
+            entries.put(to, copy);
+        }
+
+        Map<String, Set<UUID>> shares = waypointShares.get(from);
+        if (shares != null) {
+            Map<String, Set<UUID>> copied = new HashMap<>();
+            shares.forEach((uuid, ids) -> {
+                Set<UUID> kept = new HashSet<>(ids);
+                kept.retainAll(carried);
+                if (!kept.isEmpty()) copied.put(uuid, kept);
+            });
+            if (!copied.isEmpty()) waypointShares.put(to, copied);
+        }
+
+        Map<String, Allowance> players = allowances.get(from);
+        if (players != null) {
+            Map<String, Allowance> copied = new HashMap<>();
+            players.forEach((uuid, a) -> copied.put(uuid, new Allowance(a.capacity, a.shareCharges)));
+            allowances.put(to, copied);
+        }
+
+        setDirty();
+        return carried.size();
+    }
+
     public void addExpansion(MapIdentity mapId, ExpansionRecord record) {
         if (record != null && record.target() != null
                 && !record.target().dimension().equals(mapId.dimension())) {

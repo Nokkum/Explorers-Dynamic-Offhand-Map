@@ -1,5 +1,6 @@
 package com.explorermap.hud;
 
+import com.explorermap.banner.BannerLabels;
 import com.explorermap.gui.GuiText;
 import com.explorermap.registry.ExplorerMapRegistry;
 import com.explorermap.waypoint.Waypoint;
@@ -51,6 +52,10 @@ public final class WaypointIconRenderer {
 
     public static void drawOnMap(GuiGraphicsExtractor ctx, Waypoint waypoint,
                                   int sx, int sy, int iconSize, boolean showLabel) {
+        if (BannerLabels.isBannerLabel(waypoint)) {
+            drawBannerLabel(ctx, waypoint, sx, sy);
+            return;
+        }
         draw(ctx, waypoint, sx, sy, iconSize);
 
         if (showLabel) {
@@ -68,6 +73,27 @@ public final class WaypointIconRenderer {
                         labelX, labelY, 0xFF000000 | waypoint.color(), false);
             }
         }
+    }
+
+    // A banner's name stands in for an icon: only the text is drawn, centered on the banner, and larger when the
+    // banner stands on a block that calls for it (a Lodestone). The text keeps its size as the map is zoomed.
+    private static void drawBannerLabel(GuiGraphicsExtractor ctx, Waypoint label, int cx, int cy) {
+        var font = Minecraft.getInstance().font;
+        if (font == null) return;
+
+        String text = GuiText.waypointName(label);
+        float scale = BannerLabels.isLarge(label) ? BannerLabels.LARGE_TEXT_SCALE : 1f;
+        int x = -font.width(text) / 2;
+        int y = -4;
+
+        var pose = ctx.pose();
+        pose.pushMatrix();
+        pose.translate((float) cx, (float) cy);
+        pose.scale(scale, scale);
+        ctx.text(font, text, x + 1, y + 1, 0x88000000, false);
+        // Alpha is mandatory when drawing text (an alpha of 0 draws nothing).
+        ctx.text(font, text, x, y, 0xFF000000 | label.color(), false);
+        pose.popMatrix();
     }
 
     public static void drawPickerCell(GuiGraphicsExtractor ctx, Identifier texture,

@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
@@ -206,6 +207,12 @@ public final class MapEntryData {
             if (target != null) mapped.add(new ExpansionRecord(record.direction(), target, record.highDetail()));
         }
         return new MapEntryData(discoveredPixels, mapped, waypoints, pendingStructureChunks);
+    }
+
+    // A copy for a map at another scale: only the waypoints {@code keep} accepts. Discovery is laid out per pixel
+    // of the old scale, expansions are tiles of the old scale, and pending chunks belong to the old map's scan.
+    MapEntryData copyWaypointsOnly(Predicate<Waypoint> keep) {
+        return new MapEntryData(new byte[BYTE_COUNT], List.of(), waypoints.stream().filter(keep).toList(), Set.of());
     }
 
     public List<ExpansionRecord> getExpansions() {
