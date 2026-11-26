@@ -12,8 +12,8 @@ base {
 }
 
 repositories {
-    maven { url "https://maven.shedaniel.me/" }
-    maven { url "https://maven.terraformersmc.com/" }
+    maven { url = "https://maven.shedaniel.me/" }
+    maven { url = "https://maven.terraformersmc.com/" }
 }
 
 dependencies {
@@ -38,10 +38,12 @@ test {
 }
 
 processResources {
-    inputs.property "version", project.version
-    filteringCharset "UTF-8"
+    def modVersion = project.version
+    inputs.property "version", modVersion
+    filteringCharset = "UTF-8"
+
     filesMatching("fabric.mod.json") {
-        expand "version": project.version
+        expand "version": modVersion
     }
 }
 
@@ -55,8 +57,12 @@ java {
     targetCompatibility = JavaVersion.VERSION_25
 }
 
+// Read here, while the build is configured: inside the rename closure (run when the jar is built) reaching for
+// `project` is deprecated.
+def licenseSuffix = base.archivesName.get()
+
 jar {
     from("LICENSE") {
-        rename { "${it}_${project.base.archivesName.get()}" }
+        rename { "${it}_${licenseSuffix}" }
     }
 }
