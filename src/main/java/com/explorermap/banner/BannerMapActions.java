@@ -118,7 +118,7 @@ public final class BannerMapActions {
             for (Waypoint label : entry.getWaypoints()) {
                 if (!BannerLabels.isBannerLabel(label)) continue;
                 BlockPos bannerPos = BannerLabels.bannerPosOf(label);
-                if (!level.hasChunkAt(bannerPos)) continue;
+                if (!level.hasChunk(bannerPos.getX() >> 4, bannerPos.getZ() >> 4)) continue;
 
                 String name = BannerLabels.nameAt(level, bannerPos);
                 if (name == null) {
